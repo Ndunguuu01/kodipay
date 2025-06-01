@@ -29,14 +29,13 @@ class ThemeProvider with ChangeNotifier {
   static final _lightTheme = ThemeData(
     primaryColor: const Color(0xFF90CAF9),
     scaffoldBackgroundColor: Colors.grey[100],
-    colorScheme: ColorScheme.light(
-      primary: const Color(0xFF90CAF9),
-      secondary: const Color(0xFF64B5F6),
+    colorScheme: const ColorScheme.light(
+      primary: Color(0xFF90CAF9),
+      secondary: Color(0xFF64B5F6),
       surface: Colors.white,
-      background: Colors.grey[100]!,
       error: Colors.red,
     ),
-    cardTheme: CardTheme(
+    cardTheme: CardThemeData(
       color: Colors.white,
       elevation: 2,
       shape: RoundedRectangleBorder(
@@ -56,10 +55,9 @@ class ThemeProvider with ChangeNotifier {
       primary: const Color(0xFF64B5F6),
       secondary: const Color(0xFF90CAF9),
       surface: Colors.grey[800]!,
-      background: Colors.grey[900]!,
       error: Colors.red[300]!,
     ),
-    cardTheme: CardTheme(
+    cardTheme: CardThemeData(
       color: Colors.grey[800],
       elevation: 2,
       shape: RoundedRectangleBorder(

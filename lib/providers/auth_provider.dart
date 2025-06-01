@@ -27,26 +27,26 @@ class AuthProvider with ChangeNotifier {
         context: context,
       );
 
-      print('Login response status: ${response.statusCode}');
-      print('Login response body: ${response.body}');
+      // print('Login response status: ${response.statusCode}');
+      // print('Login response body: ${response.body}');
 
       if (response.statusCode == 200) {
         final authJson = jsonDecode(response.body);
-        print('Parsed auth JSON: $authJson');
-        print('User data from response: ${authJson['user']}');
+        // print('Parsed auth JSON: $authJson');
+        // print('User data from response: ${authJson['user']}');
         
         _auth = AuthModel.fromJson(authJson);
-        print('Auth model created with name: ${_auth?.name}');
+        // print('Auth model created with name: ${_auth?.name}');
         
         final token = authJson['token'];
-        print('Token received: $token');
+      // print('Token received: $token');
         await ApiService.setAuthToken(token);
         await ApiService.setRefreshToken(authJson['refreshToken']);
-        print('Tokens set in ApiService after login');
+      // print('Tokens set in ApiService after login');
       } else {
         final errorData = jsonDecode(response.body);
         _errorMessage = errorData['message'] ?? 'Login failed';
-        print('Login failed with message: $_errorMessage');
+      // print('Login failed with message: $_errorMessage');
       }
     } catch (e) {
       if (e is UnauthorizedException) {
@@ -54,7 +54,7 @@ class AuthProvider with ChangeNotifier {
       } else {
         _errorMessage = 'Error during login: $e';
       }
-      print('Login error: $_errorMessage');
+      // print('Login error: $_errorMessage');
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -87,24 +87,24 @@ class AuthProvider with ChangeNotifier {
         context: context,
       );
 
-      print('Register response status: ${response.statusCode}');
-      print('Register response body: ${response.body}');
+      // print('Register response status: ${response.statusCode}');
+      // print('Register response body: ${response.body}');
 
       if (response.statusCode == 201) {
         final authJson = jsonDecode(response.body);
-        print('Parsed auth JSON: $authJson');
-        print('User data from response: ${authJson['user']}');
+        // print('Parsed auth JSON: $authJson');
+        // print('User data from response: ${authJson['user']}');
         
         _auth = AuthModel.fromJson(authJson);
-        print('Auth model created with name: ${_auth?.name}');
+        // print('Auth model created with name: ${_auth?.name}');
         
         await ApiService.setAuthToken(authJson['token']);
         await ApiService.setRefreshToken(authJson['refreshToken']);
-        print('Tokens set in ApiService after registration');
+      // print('Tokens set in ApiService after registration');
       } else {
         final errorData = jsonDecode(response.body);
         _errorMessage = errorData['message'] ?? 'Registration failed';
-        print('Registration failed with message: $_errorMessage');
+      // print('Registration failed with message: $_errorMessage');
       }
     } catch (e) {
       if (e is UnauthorizedException) {
@@ -112,7 +112,7 @@ class AuthProvider with ChangeNotifier {
       } else {
         _errorMessage = 'Error during registration: $e';
       }
-      print('Registration error: $_errorMessage');
+      // print('Registration error: $_errorMessage');
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -120,7 +120,7 @@ class AuthProvider with ChangeNotifier {
   }
 
   Future<void> logout() async {
-    print('Logging out - clearing auth and tokens');
+    // print('Logging out - clearing auth and tokens');
     _auth = null;
     await ApiService.clearAuthToken();
     await ApiService.clearRefreshToken();
@@ -129,6 +129,11 @@ class AuthProvider with ChangeNotifier {
 
   void clearError() {
     _errorMessage = null;
+    notifyListeners();
+  }
+
+  void updateAuth(AuthModel updatedAuth) {
+    _auth = updatedAuth;
     notifyListeners();
   }
 }

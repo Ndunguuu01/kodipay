@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:local_auth/local_auth.dart';
+/* import 'package:local_auth/local_auth.dart'; */
 import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/auth_provider.dart';
 
@@ -15,17 +15,17 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _phoneNumberController = TextEditingController();
   final _passwordController = TextEditingController();
-  final LocalAuthentication _localAuth = LocalAuthentication();
+  // final LocalAuthentication _localAuth = LocalAuthentication();
 
   String? _error;
   bool _isLoading = false;
   DateTime? _lastLoginAttempt;
-  bool _canUseBiometrics = false;
+  // bool _canUseBiometrics = false;
 
   @override
   void initState() {
     super.initState();
-    _checkBiometricSupport();
+    // _checkBiometricSupport();
     _loadSavedCredentials();
   }
 
@@ -36,14 +36,28 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  Future<void> _checkBiometricSupport() async {
+  Future<void> _loadSavedCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+    _phoneNumberController.text = prefs.getString('phoneNumber') ?? '';
+    _passwordController.text = prefs.getString('password') ?? '';
+  }
+
+  Future<void> _saveCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('phoneNumber', _phoneNumberController.text);
+    await prefs.setString('password', _passwordController.text);
+  }
+
+  /* Future<void> _checkBiometricSupport() async {
     try {
       final canCheck = await _localAuth.canCheckBiometrics;
       final supported = await _localAuth.isDeviceSupported();
+      if (!mounted) return;
       setState(() {
         _canUseBiometrics = canCheck && supported;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _canUseBiometrics = false;
       });
@@ -64,6 +78,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _biometricLogin() async {
     if (!_canUseBiometrics) {
+      if (!mounted) return;
       setState(() {
         _error = "Biometric authentication not supported on this device.";
       });
@@ -85,6 +100,7 @@ class _LoginScreenState extends State<LoginScreen> {
         final pass = prefs.getString('password');
 
         if (phone == null || pass == null) {
+          if (!mounted) return;
           setState(() {
             _error = "No saved credentials found. Please log in manually first.";
           });
@@ -93,18 +109,21 @@ class _LoginScreenState extends State<LoginScreen> {
 
         await _performLogin(phone, pass);
       } else {
+        if (!mounted) return;
         setState(() {
           _error = "Biometric authentication failed.";
         });
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = "Biometric authentication error: $e";
       });
     }
-  }
+  } */
 
   Future<void> _performLogin(String phone, String password) async {
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
       _error = null;
@@ -121,10 +140,12 @@ class _LoginScreenState extends State<LoginScreen> {
         context.go('/landlord-home');
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = e.toString().replaceFirst('Exception: ', '');
       });
     } finally {
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
       });
@@ -133,7 +154,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _login() async {
     if (_lastLoginAttempt != null &&
-        DateTime.now().difference(_lastLoginAttempt!).inSeconds < 2) return;
+        DateTime.now().difference(_lastLoginAttempt!).inSeconds < 2) {
+      return;
+    }
 
     if (_isLoading) return;
 
@@ -237,7 +260,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             Text(_error!, style: const TextStyle(color: Colors.red)),
                           ],
                           const SizedBox(height: 20),
-                          if (_canUseBiometrics)
+                          /* if (_canUseBiometrics)
                             SizedBox(
                               width: double.infinity,
                               child: ElevatedButton.icon(
@@ -252,7 +275,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ),
                                 ),
                               ),
-                            ),
+                            ), */
                           const SizedBox(height: 10),
                           SizedBox(
                             width: double.infinity,
@@ -277,9 +300,18 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     const SizedBox(height: 20),
-                    TextButton(
-                      onPressed: () => context.go('/register'),
-                      child: const Text('Don’t have an account? Register'),
+                    GestureDetector(
+                      onTap: () {
+                        print('Register button tapped');
+                        context.go('/register');
+                      },
+                      child: const Text(
+                        'Don’t have an account? Register',
+                        style: TextStyle(
+                          color: Colors.blue,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
                     ),
                   ],
                 ),

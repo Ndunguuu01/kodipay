@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:kodipay/providers/auth_provider.dart';
 import 'package:kodipay/providers/complaint_provider.dart';
 import 'package:kodipay/providers/lease_provider.dart';
-
 
 class ComplaintsScreen extends StatefulWidget {
   const ComplaintsScreen({super.key});
@@ -18,11 +16,18 @@ class _ComplaintsScreenState extends State<ComplaintsScreen> {
   final _descriptionController = TextEditingController();
 
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!mounted) return;
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final complaintProvider = Provider.of<ComplaintProvider>(context, listen: false);
-    complaintProvider.fetchComplaints(authProvider.auth!.id, context);
+    final leaseProvider = Provider.of<LeaseProvider>(context, listen: false);
+    if (authProvider.auth != null) {
+      complaintProvider.fetchComplaints(authProvider.auth!.id, context);
+      if (!leaseProvider.isLoading && leaseProvider.leases.isEmpty) {
+        leaseProvider.fetchLeases(authProvider.auth!.id, authProvider.auth!.token);
+      }
+    }
   }
 
   Future<void> _submitComplaint(BuildContext context) async {
@@ -30,7 +35,7 @@ class _ComplaintsScreenState extends State<ComplaintsScreen> {
     final leaseProvider = Provider.of<LeaseProvider>(context, listen: false);
     final complaintProvider = Provider.of<ComplaintProvider>(context, listen: false);
 
-    if (authProvider.auth == null || leaseProvider.lease == null) {
+    if (authProvider.auth == null || leaseProvider.leases.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No lease found. Cannot submit complaint.')),
       );
@@ -51,7 +56,7 @@ class _ComplaintsScreenState extends State<ComplaintsScreen> {
       title,
       description,
       authProvider.auth!.id,
-      leaseProvider.lease!.propertyId, // Use the first lease's propertyId
+      leaseProvider.leases.first.propertyId,
       context,
     );
 
@@ -61,6 +66,8 @@ class _ComplaintsScreenState extends State<ComplaintsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Complaint submitted successfully')),
       );
+      // Refresh the complaints list
+      complaintProvider.fetchComplaints(authProvider.auth!.id, context);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(complaintProvider.errorMessage!)),
@@ -83,14 +90,6 @@ class _ComplaintsScreenState extends State<ComplaintsScreen> {
       appBar: AppBar(
         title: const Text('Complaints'),
         backgroundColor: const Color(0xFF90CAF9),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.add),
-            onPressed: () {
-              context.go('/tenant-home/add-complaint');
-            },
-          ),
-        ],
       ),
       body: complaintProvider.isLoading
           ? const Center(child: CircularProgressIndicator())

@@ -32,7 +32,15 @@ void main() async {
         ChangeNotifierProvider(create: (_) => tenant.TenantProvider()),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
       ],
-      child: const MyApp(),
+      child: Consumer<AuthProvider>(
+        builder: (context, authProvider, _) {
+          if (authProvider.auth != null) {
+            Provider.of<BillProvider>(context, listen: false)
+              .setUserId(authProvider.auth!.id);
+          }
+          return const MyApp();
+        },
+      ),
     ),
   );
 }

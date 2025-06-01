@@ -1,13 +1,12 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:kodipay/models/property.dart';
-import 'package:kodipay/providers/message_provider.dart';
+import 'package:kodipay/models/floor_model.dart';
 import 'package:kodipay/services/api.dart';
-import 'package:http/http.dart' as http;
+import 'package:kodipay/providers/message_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class PropertyProvider with ChangeNotifier {
-  static const String baseUrl = 'http://192.168.0.102:5000/api';
   List<PropertyModel> _properties = [];
   bool _isLoading = false;
   String? _errorMessage;
@@ -16,7 +15,7 @@ class PropertyProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
 
-    // Helper method to get auth token
+  // Helper method to get auth token
   Future<String> _getAuthToken() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('auth_token');
@@ -27,28 +26,48 @@ class PropertyProvider with ChangeNotifier {
   }
 
   /// Fetch properties for a landlord
-  Future<void> fetchProperties(BuildContext context,) async {
+  Future<void> fetchProperties(BuildContext context) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
       final token = await _getAuthToken();
-      final response = await http.get(
-        Uri.parse('$baseUrl/properties/landlord'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
+      final response = await ApiService.get(
+        '/properties/landlord',
+        headers: {'Authorization': 'Bearer $token'},
+        context: context,
       );
 
-      print('API Response: ${response.statusCode} - ${response.body}');
+      print('Fetch properties API Response: ${response.statusCode} - ${response.body}');
 
       if (response.statusCode == 200) {
         final List<dynamic> propertiesJson = jsonDecode(response.body);
         _properties = propertiesJson.map((json) => PropertyModel.fromJson(json)).toList();
+
+        // Calculate occupiedRooms dynamically for each property
+        _properties = _properties.map((property) {
+          int occupiedCount = 0;
+          for (var floor in property.floors) {
+            occupiedCount += floor.rooms.where((room) => room.isOccupied).length;
+          }
+          return PropertyModel(
+            id: property.id,
+            name: property.name,
+            address: property.address,
+            rentAmount: property.rentAmount,
+            totalRooms: property.totalRooms,
+            occupiedRooms: occupiedCount,
+            floors: property.floors,
+            description: property.description,
+            landlordId: property.landlordId,
+            imageUrl: property.imageUrl,
+            createdAt: property.createdAt,
+            updatedAt: property.updatedAt,
+          );
+        }).toList();
       } else {
-        _errorMessage = 'Failed to fetch properties: ${response.statusCode}';
+        _errorMessage = 'Failed to fetch properties: ${response.statusCode} - ${response.body}';
       }
     } catch (e) {
       _errorMessage = 'Error fetching properties: ${e.toString()}';
@@ -81,36 +100,36 @@ class PropertyProvider with ChangeNotifier {
         'floors': floors.map((floor) => floor.toJson()).toList(),
       };
 
-      final response = await http.post(
-        Uri.parse('$baseUrl/properties'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode(propertyData),
+      final response = await ApiService.post(
+        '/properties',
+        propertyData,
+        headers: {'Authorization': 'Bearer $token'},
+        context: null,
       );
 
       if (response.statusCode == 201) {
         final newProperty = PropertyModel.fromJson(jsonDecode(response.body));
         _properties.add(newProperty);
       } else {
-        _errorMessage = 'Failed to add property: ${response.statusCode}';
+        _errorMessage = 'Failed to add property: ${response.statusCode} - ${response.body}';
       }
     } catch (e) {
       _errorMessage = 'Error adding property: ${e.toString()}';
+      print('Error details: $e');
     } finally {
       _isLoading = false;
       notifyListeners();
     }
   }
 
-  //// Assign tenant to a room
+  /// Assign tenant to a room
   Future<void> assignTenantToRoom({
     required String propertyId,
     required int floorNumber,
     required String roomNumber,
     required String tenantId,
     required MessageProvider messageProvider,
+    String? roomId,
   }) async {
     _isLoading = true;
     _errorMessage = null;
@@ -118,21 +137,30 @@ class PropertyProvider with ChangeNotifier {
 
     try {
       final token = await _getAuthToken();
-      final response = await http.put(
-        Uri.parse('$baseUrl/properties/$propertyId/assign-tenant'),
+      final payload = {
+        'floorNumber': floorNumber,
+        'roomNumber': roomNumber,
+        'tenantId': tenantId,
+        if (roomId != null) 'roomId': roomId,
+      };
+
+      print('Assigning tenant with payload: $payload, roomId: ${roomId ?? "not provided"}');
+
+      final response = await ApiService.put(
+        '/properties/$propertyId/assign-tenant',
+        payload,
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
         },
-        body: jsonEncode({
-          'floorNumber': floorNumber,
-          'roomNumber': roomNumber,
-          'tenantId': tenantId,
-        }),
+        context: null,
       );
 
+      print('Assign tenant response: ${response.statusCode} - ${response.body}');
+
       if (response.statusCode == 200) {
-        final updatedProperty = PropertyModel.fromJson(jsonDecode(response.body));
+        final responseData = jsonDecode(response.body);
+        final updatedProperty = PropertyModel.fromJson(responseData['property']);
         final index = _properties.indexWhere((p) => p.id == propertyId);
         if (index != -1) _properties[index] = updatedProperty;
 
@@ -143,11 +171,14 @@ class PropertyProvider with ChangeNotifier {
           tenantId: tenantId,
           messageProvider: messageProvider,
         );
+      } else if (response.statusCode == 404 && response.body.contains('Tenant not found')) {
+        _errorMessage = 'Tenant does not exist. Please verify the tenant ID.';
       } else {
-        _errorMessage = 'Failed to assign tenant: ${response.statusCode}';
+        _errorMessage = 'Failed to assign tenant: ${response.statusCode} - ${response.body}';
       }
     } catch (e) {
       _errorMessage = 'Error assigning tenant: ${e.toString()}';
+      print('Error details: $e');
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -160,18 +191,26 @@ class PropertyProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      final response = await ApiService.delete('/properties/$propertyId', context: context);
+      final token = await _getAuthToken();
+      final response = await ApiService.delete(
+        '/properties/$propertyId',
+        headers: {'Authorization': 'Bearer $token'},
+        context: context,
+      );
+
       if (response.statusCode == 200) {
         _properties.removeWhere((property) => property.id == propertyId);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Property deleted successfully')),
         );
       } else {
+        _errorMessage = 'Failed to delete property: ${response.statusCode} - ${response.body}';
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to delete property')),
+          SnackBar(content: Text('Failed to delete property: ${response.body}')),
         );
       }
     } catch (e) {
+      _errorMessage = 'Error deleting property: ${e.toString()}';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: $e')),
       );
@@ -190,9 +229,14 @@ class PropertyProvider with ChangeNotifier {
     required MessageProvider messageProvider,
   }) async {
     try {
+      if (property.landlordId == null) {
+        print('Warning: landlordId is null for property ${property.id}');
+        return;
+      }
+
       final message = 'You have been assigned to room $roomNumber on floor $floorNumber in ${property.name} at ${property.address}. Rent: KES ${property.rentAmount}.';
       await messageProvider.sendDirectMessage(
-        senderId: property.landlordId,
+        senderId: property.landlordId!,
         recipientId: tenantId,
         content: message,
       );
@@ -217,4 +261,3 @@ class PropertyProvider with ChangeNotifier {
     }
   }
 }
-

@@ -85,8 +85,8 @@ class _MessagingDashboardScreenState extends State<MessagingDashboardScreen> {
             ),
             title: Text(property.name),
             subtitle: Text('${property.address}\nGroup chat for all tenants and landlord'),
-            onTap: () {
-              context.go('/messaging/group/${property.id}');
+              onTap: () {
+              context.push('/messaging/group/${property.id}');
             },
           ),
         );
@@ -110,17 +110,17 @@ class _MessagingDashboardScreenState extends State<MessagingDashboardScreen> {
 
     return ListView.builder(
       padding: const EdgeInsets.all(16),
-      itemCount: propertyProvider.properties.length,
-      itemBuilder: (context, index) {
-        final property = propertyProvider.properties[index];
-        final allRooms = property.floors.expand((floor) => floor.rooms).toList();
-        final occupiedRooms = allRooms.where((room) => room.tenantId != null && room.tenantId!.isNotEmpty).toList();
+                itemCount: propertyProvider.properties.length,
+                itemBuilder: (context, index) {
+                  final property = propertyProvider.properties[index];
+                  final allRooms = property.floors.expand((floor) => floor.rooms).toList();
+                  final occupiedRooms = allRooms.where((room) => room.tenantId != null && room.tenantId!.isNotEmpty).toList();
 
-        if (occupiedRooms.isEmpty) return const SizedBox();
+                  if (occupiedRooms.isEmpty) return const SizedBox();
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8.0),
               child: Text(
@@ -131,7 +131,7 @@ class _MessagingDashboardScreenState extends State<MessagingDashboardScreen> {
                 ),
               ),
             ),
-            ...occupiedRooms.map((room) {
+                      ...occupiedRooms.map((room) {
               final tenant = tenantProvider.tenants.firstWhere(
                 (t) => t.id == room.tenantId,
                 orElse: () => TenantModel(
@@ -139,7 +139,6 @@ class _MessagingDashboardScreenState extends State<MessagingDashboardScreen> {
                   phoneNumber: '',
                   firstName: '',
                   lastName: '',
-                  email: '',
                   status: '',
                   paymentStatus: '',
                   propertyId: '',
@@ -153,18 +152,18 @@ class _MessagingDashboardScreenState extends State<MessagingDashboardScreen> {
                     backgroundColor: Color(0xFF90CAF9),
                     child: Icon(Icons.person, color: Colors.white),
                   ),
-                  title: Text('Room ${room.roomNumber}'),
+                          title: Text('Room ${room.roomNumber}'),
                   subtitle: Text(tenant.fullName),
-                  onTap: () {
-                    context.go('/messaging/direct/${room.tenantId}/${tenant.phoneNumber}');
-                  },
+                          onTap: () {
+                    context.push('/messaging/direct/${room.tenantId}/${tenant.phoneNumber}');
+                          },
                 ),
-              );
-            }).toList(),
+                        );
+                      }),
             const SizedBox(height: 16),
-          ],
-        );
-      },
+                    ],
+                  );
+                },
     );
   }
 }

@@ -1,91 +1,75 @@
-import 'package:kodipay/models/room_model.dart';
-
-class FloorModel {
-  final int floorNumber;
-  final List<RoomModel> rooms;
-
-  FloorModel({required this.floorNumber, required this.rooms});
-
-  factory FloorModel.fromJson(Map<String, dynamic> json) {
-    return FloorModel(
-      floorNumber: json['floorNumber'] ?? 0,
-      rooms: (json['rooms'] as List<dynamic>?)
-              ?.map((room) => RoomModel.fromJson(room))
-              .toList() ??
-          [],
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'floorNumber': floorNumber,
-      'rooms': rooms.map((room) => room.toJson()).toList(),
-    };
-  }
-}
+import 'package:kodipay/models/floor_model.dart';
 
 class PropertyModel {
   final String id;
-  final String landlordId;
   final String name;
   final String address;
   final double rentAmount;
-  final String? description;
-  final List<FloorModel> floors;
+  final int totalRooms;
   final int? occupiedRooms;
-   final String? tenantName;
+  final List<FloorModel> floors;
+  final String? description;
+  final String? landlordId;
+  final String? imageUrl;
+  final DateTime createdAt;
+  final DateTime updatedAt;
 
   PropertyModel({
     required this.id,
-    required this.landlordId,
     required this.name,
     required this.address,
     required this.rentAmount,
-    this.description,
-    required this.floors,
+    required this.totalRooms,
     this.occupiedRooms,
-    this.tenantName,
+    required this.floors,
+    this.description,
+    this.landlordId,
+    this.imageUrl,
+    required this.createdAt,
+    required this.updatedAt,
   });
 
   factory PropertyModel.fromJson(Map<String, dynamic> json) {
     return PropertyModel(
       id: json['_id'] ?? '',
-      landlordId: json['landlordId'] ?? json['landlord'] ?? '',
       name: json['name'] ?? '',
       address: json['address'] ?? '',
       rentAmount: (json['rentAmount'] as num?)?.toDouble() ?? 0.0,
+      totalRooms: json['totalRooms'] ?? 0,
+      occupiedRooms: json['occupiedRooms'],
+      floors: (json['floors'] as List<dynamic>?)?.map((f) => FloorModel.fromJson(f)).toList() ?? [],
       description: json['description'],
-      floors: (json['floors'] as List<dynamic>?)
-              ?.map((floor) => FloorModel.fromJson(floor))
-              .toList() ?? 
-          [],
-      occupiedRooms: json['occupiedRooms'] ?? 0,
-      tenantName: json['tenantName'],
-      
+      landlordId: json['landlordId'],
+      imageUrl: json['imageUrl'],
+      createdAt: DateTime.parse(json['createdAt'] ?? DateTime.now().toIso8601String()),
+      updatedAt: DateTime.parse(json['updatedAt'] ?? DateTime.now().toIso8601String()),
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
-      'landlordId': landlordId,
+      '_id': id,
       'name': name,
       'address': address,
       'rentAmount': rentAmount,
-      'description': description,
+      'totalRooms': totalRooms,
+      'occupiedRooms': occupiedRooms,
       'floors': floors.map((floor) => floor.toJson()).toList(),
+      'description': description,
+      'landlordId': landlordId,
+      'imageUrl': imageUrl,
     };
   }
 
-  static PropertyModel empty = PropertyModel(
+  static final PropertyModel empty = PropertyModel(
     id: '',
-    landlordId: '',
     name: '',
     address: '',
-    rentAmount: 0.0,
+    rentAmount: 0,
+    totalRooms: 0,
+    occupiedRooms: 0,
     floors: [],
+    createdAt: DateTime.now(),
+    updatedAt: DateTime.now(),
   );
-
-  int get totalRooms {
-    return floors.fold(0, (sum, floor) => sum + floor.rooms.length);
-  }
 }

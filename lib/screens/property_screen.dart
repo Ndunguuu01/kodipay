@@ -11,13 +11,12 @@ import 'package:kodipay/providers/message_provider.dart';
 class PropertyScreen extends StatelessWidget {
   final String propertyId;
 
-  const PropertyScreen({Key? key, required this.propertyId}) : super(key: key);
+  const PropertyScreen({super.key, required this.propertyId});
 
   Future<void> _assignTenant(
     BuildContext context,
     String propertyId,
     int floorNumber,
-    String roomId,
     RoomModel room,
   ) async {
     final propertyProvider = Provider.of<PropertyProvider>(context, listen: false);
@@ -26,7 +25,6 @@ class PropertyScreen extends StatelessWidget {
 
     await tenantProviderInstance.fetchTenants();
     final selectedTenant = await showDialog<TenantModel>(
-
       context: context,
       builder: (context) {
         return AlertDialog(
@@ -49,16 +47,17 @@ class PropertyScreen extends StatelessWidget {
           actions: [
             TextButton(
               onPressed: () async {
-                Navigator.pop(context); 
-                final result = await GoRouter.of(context).push<Map<String, dynamic>>(
-                  '/landlord-home/properties/add-tenant',
-                  extra: {
-                    'propertyId': propertyId,
-                    'floorNumber': floorNumber.toString(),
-                    'roomId': roomId,
-                    'room!': room.toJson(),
-                  },
-                );
+                Navigator.pop(context);
+final result = await GoRouter.of(context).push<Map<String, dynamic>>(
+  '/landlord-home/properties/add-tenant',
+  extra: {
+    'propertyId': propertyId,
+    'roomId': room.id,
+    'floorNumber': floorNumber,
+    'roomNumber': room.roomNumber,
+'excludeTenantIds': <String>[],
+  },
+);
 
                 if (result != null && result['tenant'] != null) {
                   await propertyProvider.assignTenantToRoom(
@@ -72,6 +71,10 @@ class PropertyScreen extends StatelessWidget {
                   if (propertyProvider.errorMessage == null) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Tenant assigned successfully')),
+                    );
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(propertyProvider.errorMessage!)),
                     );
                   }
                 }
@@ -100,6 +103,10 @@ class PropertyScreen extends StatelessWidget {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Tenant assigned to ${room.roomNumber} successfully')),
         );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(propertyProvider.errorMessage!)),
+        );
       }
     }
   }
@@ -111,9 +118,8 @@ class PropertyScreen extends StatelessWidget {
       orElse: () => TenantModel(
         id: '',
         phoneNumber: '',
-        firstName: '',
+        firstName: 'Unknown',
         lastName: '',
-        email: '',
         status: '',
         paymentStatus: '',
         propertyId: '',
@@ -130,11 +136,13 @@ class PropertyScreen extends StatelessWidget {
       (p) => p.id == propertyId,
       orElse: () => PropertyModel(
         id: '',
-        landlordId: '',
-        name: 'Not Found',
+        name: '',
         address: '',
-        rentAmount: 0.0,
-        floors: [], 
+        rentAmount: 0,
+        totalRooms: 0,
+        floors: [],
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
       ),
     );
 
@@ -158,8 +166,7 @@ class PropertyScreen extends StatelessWidget {
                   const SizedBox(height: 8),
                   Text('Occupied Rooms: ${property.occupiedRooms}', style: const TextStyle(fontSize: 16)),
                   const SizedBox(height: 16),
-                  const Text('Floors and Rooms:',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const Text('Floors and Rooms:', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
                   for (var floor in property.floors)
                     Column(
@@ -189,7 +196,6 @@ class PropertyScreen extends StatelessWidget {
                                       context,
                                       property.id,
                                       floor.floorNumber,
-                                      room.id,
                                       room,
                                     ),
                                     child: const Text('Assign Tenant'),

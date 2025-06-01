@@ -5,11 +5,12 @@ import '../providers/property_provider.dart';
 import '../providers/tenant_provider.dart';
 import '../models/tenant_model.dart' as tenantModel;
 import 'add_tenant_screen.dart';
+import 'RoomDetailScreen.dart';
 
 class PropertyDetailsScreen extends StatelessWidget {
   final PropertyModel property;
 
-  const PropertyDetailsScreen({Key? key, required this.property}) : super(key: key);
+  const PropertyDetailsScreen({super.key, required this.property});
 
   @override
   Widget build(BuildContext context) {
@@ -28,12 +29,11 @@ class PropertyDetailsScreen extends StatelessWidget {
         orElse: () => tenantModel.TenantModel(
           id: '',
           phoneNumber: '',
-          email: '',
           status: '',
           paymentStatus: '',
         ),
       );
-      return tenant.fullName.isNotEmpty ? tenant.fullName : tenant.name;
+      return tenant.fullName.isNotEmpty ? tenant.fullName : 'Unknown Tenant';
     }
 
     final assignedTenantIds = updatedProperty.floors
@@ -67,30 +67,67 @@ class PropertyDetailsScreen extends StatelessWidget {
                       Text('Floor ${floor.floorNumber}:', style: const TextStyle(fontWeight: FontWeight.bold)),
                       const SizedBox(height: 4),
                       ...floor.rooms.map((room) {
-                        return ListTile(
-                          title: Text('${room.roomNumber} (${room.tenantId != null ? "Occupied" : "Vacant"})'),
-                          subtitle: room.tenantId != null
-                              ? Text('Assigned to tenant: ${getTenantName(room.tenantId)}')
-                              : null,
-                          trailing: room.tenantId == null
-                              ? TextButton(
+                        return room.tenantId == null
+                            ? ListTile(
+                                title: Text('${room.roomNumber} (Vacant)'),
+                                trailing: TextButton(
                                   onPressed: () async {
+                                    print('Assigning tenant to room:');
+                                    print('Property ID: ${updatedProperty.id}');
+                                    print('Room ID: ${room.id}');
+                                    print('Floor Number: ${floor.floorNumber}');
+                                    print('Room Number: ${room.roomNumber}');
+
+                                    if (room.id.isEmpty) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('Invalid room information')),
+                                      );
+                                      return;
+                                    }
+
                                     await Navigator.push(
                                       context,
                                       MaterialPageRoute(
                                         builder: (_) => AddTenantScreen(
                                           propertyId: updatedProperty.id,
-                                          roomId: room.roomNumber,
+                                          roomId: room.id,
+                                          floorNumber: floor.floorNumber,
+                                          roomNumber: room.roomNumber,
                                           excludeTenantIds: assignedTenantIds.toList(),
                                         ),
                                       ),
                                     );
                                   },
                                   child: const Text("Assign Tenant"),
-                                )
-                              : null,
-                        );
-                      }).toList(),
+                                ),
+                              )
+                            : ListTile(
+                                onTap: () {
+                                  final tenant = tenantProvider.tenants.firstWhere(
+                                    (t) => t.id == room.tenantId,
+                                    orElse: () => tenantModel.TenantModel(
+                                      id: '',
+                                      phoneNumber: '',
+                                      status: '',
+                                      paymentStatus: '',
+                                    ),
+                                  );
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => RoomDetailScreen(
+                                        room: room,
+                                        tenant: tenant,
+                                        propertyId: updatedProperty.id,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                title: Text('${room.roomNumber} (Occupied)'),
+                                subtitle: Text('Assigned to tenant: ${getTenantName(room.tenantId)}'),
+                                trailing: const Icon(Icons.info_outline, color: Colors.blue),
+                              );
+                      }),
                       const Divider(),
                     ],
                   );
@@ -100,6 +137,6 @@ class PropertyDetailsScreen extends StatelessWidget {
           ],
         ),
       ),
-    );
+      );
+    }
   }
-}

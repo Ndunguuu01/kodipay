@@ -2,21 +2,22 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../services/api.dart';
-import '../models/lease.dart';
+import 'package:kodipay/models/lease_model.dart';
 
 class LeaseProvider with ChangeNotifier {
-  Lease? _lease;
+  List<LeaseModel> _leases = [];
   bool _isLoading = false;
   String? _error;
 
-  Lease? get lease => _lease;
+  List<LeaseModel> get leases => _leases;
   bool get isLoading => _isLoading;
   String? get error => _error;
 
   /// Fetches the lease for the authenticated user's tenant ID.
   Future<void> fetchLease(String tenantId) async {
-    _setLoading(true);
+    _isLoading = true;
     _error = null;
+    notifyListeners();
 
     try {
       final String endpoint = '/leases/tenant/$tenantId';
@@ -29,7 +30,7 @@ class LeaseProvider with ChangeNotifier {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data != null && data is Map<String, dynamic>) {
-          _lease = Lease.fromJson(data);
+          _leases.add(LeaseModel.fromJson(data));
           _error = null;
         } else {
           _setError('Invalid lease data format.');
@@ -45,13 +46,102 @@ class LeaseProvider with ChangeNotifier {
       print('Error fetching lease: $e');
       _setError('Error fetching lease: $e');
     } finally {
-      _setLoading(false);
+      _isLoading = false;
+      notifyListeners();
     }
   }
 
-  void _setLoading(bool value) {
-    _isLoading = value;
+  Future<void> fetchLeases(String userId, String token) async {
+    _isLoading = true;
+    _error = null;
     notifyListeners();
+
+    try {
+      final response = await ApiService.get(
+        '/leases/tenant/$userId',
+        headers: {'Authorization': 'Bearer $token'},
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(response.body);
+        _leases = data.map((json) => LeaseModel.fromJson(json)).toList();
+      } else {
+        _error = 'Failed to fetch leases';
+      }
+    } catch (e) {
+      _error = e.toString();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> createLease(LeaseModel lease) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final response = await ApiService.post('/leases', lease.toJson());
+
+      if (response.statusCode == 201) {
+        final newLease = LeaseModel.fromJson(json.decode(response.body));
+        _leases.add(newLease);
+      } else {
+        _error = 'Failed to create lease';
+      }
+    } catch (e) {
+      _error = e.toString();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> updateLease(String id, LeaseModel lease) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final response = await ApiService.put('/leases/$id', lease.toJson());
+
+      if (response.statusCode == 200) {
+        final updatedLease = LeaseModel.fromJson(json.decode(response.body));
+        final index = _leases.indexWhere((l) => l.id == id);
+        if (index != -1) {
+          _leases[index] = updatedLease;
+        }
+      } else {
+        _error = 'Failed to update lease';
+      }
+    } catch (e) {
+      _error = e.toString();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> deleteLease(String id) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final response = await ApiService.delete('/leases/$id');
+
+      if (response.statusCode == 200) {
+        _leases.removeWhere((lease) => lease.id == id);
+      } else {
+        _error = 'Failed to delete lease';
+      }
+    } catch (e) {
+      _error = e.toString();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 
   void _setError(String error) {

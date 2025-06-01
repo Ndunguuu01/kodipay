@@ -18,7 +18,7 @@ class PaymentProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      final response = await ApiService.get('/payments/$tenantId', context: context);
+      final response = await ApiService.get('/payments/$tenantId', headers: {}, context: context);
       if (response.statusCode == 200) {
         final List<dynamic> paymentsJson = jsonDecode(response.body);
         _payments = paymentsJson.map((json) => PaymentModel.fromJson(json)).toList();

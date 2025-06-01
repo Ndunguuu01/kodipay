@@ -25,6 +25,12 @@ import 'screens/leases_screen.dart';
 import 'screens/landlord_complaints_screen.dart'; 
 import 'screens/landlord_bills_screen.dart';
 import 'providers/auth_provider.dart';
+import 'screens/assign_bills_screen.dart';
+import 'screens/room_status_dashboard.dart';
+import 'screens/tenant_payment_screen.dart';
+import 'package:provider/provider.dart';
+import 'providers/bill_provider.dart';
+import 'screens/connection_test_screen.dart';
 
 GoRouter router(AuthProvider authProvider) {
   return GoRouter(
@@ -154,7 +160,7 @@ GoRouter router(AuthProvider authProvider) {
               ),
               GoRoute(
                  path: 'add-property',
-                 builder: (context, state) => AddPropertyScreen(),
+                 builder: (context, state) => const AddPropertyScreen(),
               ),
               GoRoute(
               path: 'property-details/:propertyId',
@@ -171,17 +177,33 @@ GoRouter router(AuthProvider authProvider) {
                 path: 'general-invoice',
                 builder: (context, state) => const GeneralInvoiceScreen(),
               ),
-              GoRoute(
-                path: 'add-tenant',
-                builder: (context, state) {
-                  final args = state.extra as Map<String, dynamic>;
-                  return AddTenantScreen(
-                    propertyId: args['propertyId'],
-                    roomId: args['roomId'],
-                    excludeTenantIds: args['excludeTenantIds'] ?? [],
-                  );
-                },
-              ),
+      GoRoute(
+        path: 'add-tenant',
+        builder: (context, state) {
+          final args = state.extra as Map<String, dynamic>?;
+
+          if (args == null ||
+              args['propertyId'] == null ||
+              args['roomId'] == null ||
+              args['floorNumber'] == null ||
+              args['roomNumber'] == null) {
+            // Log error and show error screen or fallback widget
+            print('Error: Missing required arguments for AddTenantScreen: \$args');
+            return Scaffold(
+              appBar: AppBar(title: const Text('Error')),
+              body: const Center(child: Text('Missing required parameters to add tenant')),
+            );
+          }
+
+          return AddTenantScreen(
+            propertyId: args['propertyId']!,
+            roomId: args['roomId']!,
+            floorNumber: args['floorNumber'] is String ? int.parse(args['floorNumber']) : args['floorNumber'],
+            roomNumber: args['roomNumber']!,
+            excludeTenantIds: args['excludeTenantIds'] ?? [],
+          );
+        },
+      ),
               GoRoute(
                 path: ':propertyId',
                 builder: (context, state) {
@@ -198,6 +220,15 @@ GoRouter router(AuthProvider authProvider) {
           GoRoute(
             path: 'bills',
             builder: (context, state) => const LandlordBillsScreen(),
+            routes: [
+              GoRoute(
+                path: 'assign/:propertyId',
+                builder: (context, state) {
+                  final propertyId = state.pathParameters['propertyId']!;
+                  return AssignBillsScreen(propertyId: propertyId);
+                },
+              ),
+            ],
           ),
           GoRoute(
             path: 'messaging',
@@ -218,6 +249,18 @@ GoRouter router(AuthProvider authProvider) {
               ),
             ],
           ),
+          GoRoute(
+            path: 'profile',
+            builder: (context, state) => const ProfileScreen(),
+          ),
+          GoRoute(
+            path: 'settings',
+            builder: (context, state) => const SettingsScreen(),
+          ),
+          GoRoute(
+            path: 'room-status',
+            builder: (context, state) => const RoomStatusDashboard(),
+          ),
         ],
       ),
       GoRoute(
@@ -232,6 +275,19 @@ GoRouter router(AuthProvider authProvider) {
         builder: (context, state) => GroupChatScreen(
           propertyId: state.pathParameters['propertyId']!,
         ),
+      ),
+      GoRoute(
+        path: '/tenant/payment/:billId',
+        builder: (context, state) {
+          final billId = state.pathParameters['billId']!;
+          final billProvider = Provider.of<BillProvider>(context, listen: false);
+          final bill = billProvider.bills.firstWhere((b) => b.id == billId);
+          return TenantPaymentScreen(bill: bill);
+        },
+      ),
+      GoRoute(
+        path: '/connection-test',
+        builder: (context, state) => const ConnectionTestScreen(),
       ),
     ],
     refreshListenable: authProvider,

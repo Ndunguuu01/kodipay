@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/api.dart';
+import '../models/auth.dart';
 
 class UpdateProfileScreen extends StatefulWidget {
   const UpdateProfileScreen({super.key});
@@ -53,7 +54,7 @@ class _UpdateProfileScreenState extends State<UpdateProfileScreen> {
     });
 
     try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      Provider.of<AuthProvider>(context, listen: false);
       final response = await ApiService.put(
         '/users/profile',
         {
@@ -67,11 +68,11 @@ class _UpdateProfileScreenState extends State<UpdateProfileScreen> {
 
       if (response.statusCode == 200) {
         // Update the auth provider with new user data
-        final updatedUser = authProvider.auth;
-        if (updatedUser != null) {
-          // TODO: Update the auth model with new data
-          // This will require modifying the AuthModel to handle updates
-        }
+        _updateAuthModel(
+          _firstNameController.text.trim(),
+          _lastNameController.text.trim(),
+          _phoneNumberController.text.trim(),
+        );
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -80,11 +81,14 @@ class _UpdateProfileScreenState extends State<UpdateProfileScreen> {
           Navigator.pop(context);
         }
       } else {
+        // Log response body for debugging
+        print('Failed to update profile. Status: \${response.statusCode}, Body: \${response.body}');
         setState(() {
           _errorMessage = 'Failed to update profile. Please try again.';
         });
       }
     } catch (e) {
+      print('Exception updating profile: \$e');
       setState(() {
         _errorMessage = 'Error updating profile: $e';
       });
@@ -94,6 +98,22 @@ class _UpdateProfileScreenState extends State<UpdateProfileScreen> {
           _isLoading = false;
         });
       }
+    }
+  }
+
+  void _updateAuthModel(String firstName, String lastName, String phoneNumber) {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final currentAuth = authProvider.auth;
+    if (currentAuth != null) {
+      final updatedAuth = AuthModel(
+        token: currentAuth.token,
+        refreshToken: currentAuth.refreshToken,
+        id: currentAuth.id,
+        role: currentAuth.role,
+        phoneNumber: phoneNumber,
+        name: '$firstName $lastName'.trim(),
+      );
+      authProvider.updateAuth(updatedAuth);
     }
   }
 
@@ -175,4 +195,4 @@ class _UpdateProfileScreenState extends State<UpdateProfileScreen> {
       ),
     );
   }
-} 
+}

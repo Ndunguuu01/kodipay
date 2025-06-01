@@ -21,7 +21,7 @@ class MessageProvider with ChangeNotifier {
   }
 
   void _initializeSocket() {
-    _socket = IO.io('http://192.168.100.51:5000', <String, dynamic>{
+    _socket = IO.io(ApiService.baseUrl.replaceAll('/api', ''), <String, dynamic>{
       'transports': ['websocket'],
       'autoConnect': false,
     });

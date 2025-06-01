@@ -80,7 +80,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final themeProvider = Provider.of<ThemeProvider>(context);
+    Provider.of<ThemeProvider>(context);
     final authProvider = Provider.of<AuthProvider>(context);
 
     if (_isLoading) {
@@ -332,8 +332,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // Logout Button
           Padding(
             padding: const EdgeInsets.all(16),
-            child: ElevatedButton(
-              onPressed: () async {
+        child: ElevatedButton(
+          onPressed: () async {
                 await authProvider.logout();
                 if (mounted) {
                   Navigator.pushReplacementNamed(context, '/login');
@@ -343,8 +343,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 backgroundColor: Colors.red,
                 padding: const EdgeInsets.symmetric(vertical: 16),
               ),
-              child: const Text('Logout'),
-            ),
+          child: const Text('Logout'),
+        ),
           ),
         ],
       ),

@@ -3,8 +3,6 @@ import 'package:provider/provider.dart';
 import 'package:kodipay/providers/auth_provider.dart';
 import 'package:kodipay/providers/lease_provider.dart';
 import 'package:kodipay/providers/property_provider.dart';
-import 'package:kodipay/models/tenant_model.dart';
-import 'package:intl/intl.dart';
 import 'package:kodipay/providers/complaint_provider.dart';
 import 'update_profile_screen.dart';
 
@@ -63,7 +61,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       radius: 50,
                       backgroundColor: Colors.white,
                       child: Text(
-                        authProvider.auth?.name?.substring(0, 1).toUpperCase() ?? 'U',
+                        authProvider.auth?.name.substring(0, 1).toUpperCase() ?? 'U',
                         style: const TextStyle(
                           fontSize: 40,
                           fontWeight: FontWeight.bold,
@@ -89,9 +87,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Text(
+                    const Text(
                       'Role: LANDLORD',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 14,
                         color: Colors.white70,
                       ),

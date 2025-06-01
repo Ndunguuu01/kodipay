@@ -59,10 +59,10 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
         context.go('/landlord-home/properties');
         break;
       case 2:
-        context.go('/landlord-home/messaging');
+        context.go('/landlord-home/complaints');
         break;
       case 3:
-        context.go('/landlord-home/profile');
+        context.go('/landlord-home/bills');
         break;
     }
   }
@@ -81,7 +81,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
     final occupiedRooms = propertyProvider.properties.fold<int>(0, (sum, p) => sum + (p.occupiedRooms ?? 0));
     final pendingComplaints = complaintProvider.complaints.where((c) => c.status != 'resolved').length;
     // For demo, unpaid bills is a placeholder
-    final unpaidBills = 0;
+    const unpaidBills = 0;
 
     return Scaffold(
       appBar: AppBar(
@@ -110,14 +110,19 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Quick Stats
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _buildStatCard('Properties', totalProperties.toString(), Icons.home, Colors.blue),
-                  _buildStatCard('Occupied Rooms', occupiedRooms.toString(), Icons.meeting_room, Colors.green),
-                  _buildStatCard('Complaints', pendingComplaints.toString(), Icons.report_problem, Colors.orange),
-                  _buildStatCard('Unpaid Bills', unpaidBills.toString(), Icons.receipt, Colors.red),
-                ],
+              SizedBox(
+                height: 110,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _buildStatCard('Properties', totalProperties.toString(), Icons.home, Colors.blue),
+                      _buildStatCard('Occupied ', occupiedRooms.toString(), Icons.meeting_room, Colors.green),
+                      _buildStatCard('Complaints', pendingComplaints.toString(), Icons.report_problem, Colors.orange),
+                      _buildStatCard('Unpaid Bills', unpaidBills.toString(), Icons.receipt, Colors.red),
+                    ],
+                  ),
+                ),
               ),
               const SizedBox(height: 24),
               // Shortcuts
@@ -139,8 +144,8 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
                 ...complaintProvider.complaints.take(3).map((c) => Card(
                   child: ListTile(
                     leading: const Icon(Icons.report_problem, color: Colors.orange),
-                    title: Text(c.title ?? c.description ?? ''),
-                    subtitle: Text('Status: ${c.status ?? 'pending'}'),
+                    title: Text(c.title),
+                    subtitle: Text('Status: ${c.status}'),
                   ),
                 )),
               const SizedBox(height: 24),

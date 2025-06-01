@@ -16,7 +16,7 @@ class ComplaintProvider with ChangeNotifier {
   Future<void> fetchComplaints(String userId, BuildContext context) async {
     _setLoadingState(true);
     try {
-      final response = await ApiService.get('/complaints/tenant/$userId', context: context);
+      final response = await ApiService.get('/complaints/tenant/$userId', context: context, headers: {});
       if (response.statusCode == 200) {
         _complaints = _parseComplaints(response.body);
       } else {
@@ -33,13 +33,16 @@ class ComplaintProvider with ChangeNotifier {
   Future<void> fetchLandlordComplaints(String landlordId, BuildContext context) async {
     _setLoadingState(true);
     try {
-      final response = await ApiService.get('/complaints/landlord/$landlordId', context: context);
+      final response = await ApiService.get('/complaints/landlord/$landlordId', context: context, headers: {});
       if (response.statusCode == 200) {
         _complaints = _parseComplaints(response.body);
       } else {
+        // Log response body for debugging
+        print('Failed to fetch landlord complaints. Status: \${response.statusCode}, Body: \${response.body}');
         _setError('Failed to fetch landlord complaints');
       }
     } catch (e) {
+      print('Exception fetching landlord complaints: \$e');
       _setError('Error fetching landlord complaints: $e');
     } finally {
       _setLoadingState(false);

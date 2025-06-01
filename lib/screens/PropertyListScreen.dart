@@ -38,52 +38,54 @@ class _PropertyListScreenState extends State<PropertyListScreen> {
       appBar: AppBar(title: const Text('Your Properties')),
       body: propertyProvider.isLoading
           ? const Center(child: CircularProgressIndicator())
-          : properties.isEmpty
-              ? const Center(child: Text("No properties found."))
-              : ListView.builder(
-                  itemCount: properties.length,
-                  itemBuilder: (context, index) {
-                    final property = properties[index];
-                    return ListTile(
-                      title: Text(property.name),
-                      subtitle: Text('${property.occupiedRooms}/${property.totalRooms} rooms occupied'),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.delete, color: Colors.red),
-                        onPressed: () async {
-                          final confirm = await showDialog<bool>(
-                            context: context,
-                            builder: (ctx) => AlertDialog(
-                              title: const Text('Delete Property'),
-                              content: const Text('Are you sure you want to delete this property?'),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.pop(ctx, false),
-                                  child: const Text('Cancel'),
+          : propertyProvider.errorMessage != null
+              ? Center(child: Text(propertyProvider.errorMessage!))
+              : properties.isEmpty
+                  ? const Center(child: Text("No properties found."))
+                  : ListView.builder(
+                      itemCount: properties.length,
+                      itemBuilder: (context, index) {
+                        final property = properties[index];
+                        return ListTile(
+                          title: Text(property.name),
+                          subtitle: Text('${property.occupiedRooms}/${property.totalRooms} rooms occupied'),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            onPressed: () async {
+                              final confirm = await showDialog<bool>(
+                                context: context,
+                                builder: (ctx) => AlertDialog(
+                                  title: const Text('Delete Property'),
+                                  content: const Text('Are you sure you want to delete this property?'),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(ctx, false),
+                                      child: const Text('Cancel'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(ctx, true),
+                                      child: const Text('Delete'),
+                                    ),
+                                  ],
                                 ),
-                                TextButton(
-                                  onPressed: () => Navigator.pop(ctx, true),
-                                  child: const Text('Delete'),
-                                ),
-                              ],
-                            ),
-                          );
+                              );
 
-                          if (confirm == true) {
-                            await propertyProvider.deleteProperty(property.id, context);
-                          }
-                        },
-                      ),
-                      onTap: () {
-                        context.go('/landlord-home/properties/${property.id}');
+                              if (confirm == true) {
+                                await propertyProvider.deleteProperty(property.id, context);
+                              }
+                            },
+                          ),
+                          onTap: () {
+                            context.go('/landlord-home/properties/${property.id}');
+                          },
+                        );
                       },
-                    );
-                  },
-                ),
+                    ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => AddPropertyScreen()),
+            MaterialPageRoute(builder: (_) => const AddPropertyScreen()),
           );
         },
         child: const Icon(Icons.add),

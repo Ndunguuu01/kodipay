@@ -23,7 +23,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       final leaseProvider = Provider.of<LeaseProvider>(context, listen: false);
       if (authProvider.auth != null) {
-        leaseProvider.fetchLease(authProvider.auth!.id);
+        leaseProvider.fetchLeases(authProvider.auth!.id,authProvider.auth!.token);
       } else {
         print('No auth data available, cannot fetch lease');
       }
@@ -205,23 +205,35 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                   ),
                 ],
               ),
-              child: leaseProvider.isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : leaseProvider.error != null
-                      ? Center(child: Text(leaseProvider.error!))
-                      : leaseProvider.lease != null
-                          ? Column(
-                              children: [
-                                _buildLeaseInfoRow('Lease Type', leaseProvider.lease!.leaseType),
-                                _buildLeaseInfoRow('Amount', 'Kes ${leaseProvider.lease!.amount.toStringAsFixed(0)}'),
-                                _buildLeaseInfoRow('Start date', leaseProvider.lease!.startDate),
-                                _buildLeaseInfoRow('Due Date', leaseProvider.lease!.dueDate),
-                                _buildLeaseInfoRow('Balance', 'Kes ${leaseProvider.lease!.balance.toStringAsFixed(0)}'),
-                                _buildLeaseInfoRow('Payable Amount', 'Kes ${leaseProvider.lease!.payableAmount.toStringAsFixed(0)}'),
-                              ],
-                            )
-                          : const Center(child: Text('No lease data available')),
-            ),
+              child: authProvider.auth == null
+            ? const Center(child: Text('Please log in to view your dashboard'))
+            : leaseProvider.isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : leaseProvider.leases.isEmpty
+                    ? Center(child: Text(leaseProvider.error ?? 'No lease information available'))
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Lease Information',
+                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 8),
+                          // Display the first lease (or adjust for multiple leases if needed)
+                          _buildLeaseInfoRow('Lease Type', leaseProvider.leases.first.leaseType),
+                          _buildLeaseInfoRow('Amount', 'Kes ${leaseProvider.leases.first.amount.toStringAsFixed(0)}'),
+                          _buildLeaseInfoRow('Start date', leaseProvider.leases.first.startDate),
+                          _buildLeaseInfoRow('Due Date', leaseProvider.leases.first.dueDate),
+                          _buildLeaseInfoRow('Balance', 'Kes ${leaseProvider.leases.first.balance.toStringAsFixed(0)}'),
+                          _buildLeaseInfoRow('Payable Amount', 'Kes ${leaseProvider.leases.first.payableAmount.toStringAsFixed(0)}'),
+                          const SizedBox(height: 16),
+                          ElevatedButton(
+                            onPressed: () {
+                              GoRouter.of(context).push('/tenant-home/complaint');
+                            },
+                            child: const Text('File a Complaint'),
+                          ),
+                        ],
+                      ),
+      ),
           ),
         ],
       ),

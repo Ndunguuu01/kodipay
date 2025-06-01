@@ -41,7 +41,6 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
         phoneNumber: '',
         firstName: '',
         lastName: '',
-        email: '',
         status: '',
         paymentStatus: '',
         propertyId: '',
@@ -205,7 +204,7 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
                                   child: Center(
                                     child: Text(
                                       _formatDate(message.timestamp),
-                                      style: TextStyle(color: Colors.grey),
+                                      style: const TextStyle(color: Colors.grey),
                                     ),
                                   ),
                                 ),

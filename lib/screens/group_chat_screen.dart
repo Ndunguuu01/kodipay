@@ -208,9 +208,9 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        isMe ? 'You' : message.senderPhoneNumber,
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
+                              isMe ? 'You' : message.senderPhoneNumber,
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
                                           color: isMe ? Colors.white : Colors.black87,
                                         ),
                                       ),
@@ -223,7 +223,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                                       ),
                                       const SizedBox(height: 4),
                                       Text(
-                                        DateFormat('HH:mm').format(message.timestamp),
+                              DateFormat('HH:mm').format(message.timestamp),
                                         style: TextStyle(
                                           fontSize: 12,
                                           color: isMe ? Colors.white70 : Colors.black54,
