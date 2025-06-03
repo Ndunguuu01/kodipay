@@ -45,12 +45,15 @@ class ApiService {
   static Future<void> initialize() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      // Explicitly load and set tokens
       _token = prefs.getString(_tokenKey);
       _refreshToken = prefs.getString(_refreshTokenKey);
+      ApiService._token = _token; // Ensure static variables are set
+      ApiService._refreshToken = _refreshToken;
       _lastConnectionCheck = DateTime.tryParse(
         prefs.getString(_lastConnectionCheckKey) ?? '',
       );
-      
+
       Logger.info('ApiService initialized with token: ${_token != null ? 'Token exists' : 'No token'}');
       
       // Test connection on initialization
@@ -107,6 +110,7 @@ class ApiService {
     int maxRetries = _maxRetries,
     Duration retryDelay = _retryDelay,
     Duration timeout = _timeout,
+    BuildContext? context,
   }) async {
     int retryCount = 0;
     while (true) {
@@ -117,6 +121,21 @@ class ApiService {
         _isConnected = true;
         _lastConnectionCheck = DateTime.now();
         await _updateLastConnectionCheck();
+
+        // Handle unauthorized access
+        if (response.statusCode == 401) {
+          Logger.warning('Received 401 response, attempting token refresh');
+          final refreshSuccess = await _refreshTokenIfNeeded(context);
+          if (refreshSuccess && retryCount < maxRetries) {
+            Logger.info('Token refreshed, retrying request');
+            await Future.delayed(retryDelay);
+            retryCount++;
+            continue;
+          } else {
+            await _handleUnauthorized(context);
+            return response;
+          }
+        }
 
         if (response.statusCode >= 500 && retryCount < maxRetries) {
           Logger.warning('Server error (${response.statusCode}), retrying... (${retryCount + 1}/$maxRetries)');
@@ -158,14 +177,9 @@ class ApiService {
     Map<String, String>? headers,
     Duration timeout = _timeout,
   }) async {
-    final authProvider = context != null 
-        ? Provider.of<AuthProvider>(context, listen: false)
-        : null;
-    
-    final token = authProvider?.auth?.token;
     final defaultHeaders = {
       'Content-Type': 'application/json',
-      if (token != null) 'Authorization': 'Bearer $token',
+      if (_token != null) 'Authorization': 'Bearer $_token',
     };
 
     return _makeRequest(
@@ -174,6 +188,7 @@ class ApiService {
         headers: headers ?? defaultHeaders,
       ),
       timeout: timeout,
+      context: context,
     );
   }
 
@@ -183,14 +198,9 @@ class ApiService {
     Map<String, String>? headers,
     Duration timeout = _timeout,
   }) async {
-    final authProvider = context != null 
-        ? Provider.of<AuthProvider>(context, listen: false)
-        : null;
-    
-    final token = authProvider?.auth?.token;
     final defaultHeaders = {
       'Content-Type': 'application/json',
-      if (token != null) 'Authorization': 'Bearer $token',
+      if (_token != null) 'Authorization': 'Bearer $_token',
     };
 
     return _makeRequest(
@@ -200,6 +210,7 @@ class ApiService {
         body: json.encode(data),
       ),
       timeout: timeout,
+      context: context,
     );
   }
 
@@ -209,14 +220,9 @@ class ApiService {
     Map<String, String>? headers,
     Duration timeout = _timeout,
   }) async {
-    final authProvider = context != null 
-        ? Provider.of<AuthProvider>(context, listen: false)
-        : null;
-    
-    final token = authProvider?.auth?.token;
     final defaultHeaders = {
       'Content-Type': 'application/json',
-      if (token != null) 'Authorization': 'Bearer $token',
+      if (_token != null) 'Authorization': 'Bearer $_token',
     };
 
     return _makeRequest(
@@ -226,6 +232,7 @@ class ApiService {
         body: json.encode(data),
       ),
       timeout: timeout,
+      context: context,
     );
   }
 
@@ -235,14 +242,9 @@ class ApiService {
     Map<String, String>? headers,
     Duration timeout = _timeout,
   }) async {
-    final authProvider = context != null 
-        ? Provider.of<AuthProvider>(context, listen: false)
-        : null;
-    
-    final token = authProvider?.auth?.token;
     final defaultHeaders = {
       'Content-Type': 'application/json',
-      if (token != null) 'Authorization': 'Bearer $token',
+      if (_token != null) 'Authorization': 'Bearer $_token',
     };
 
     return _makeRequest(
@@ -251,6 +253,7 @@ class ApiService {
         headers: headers ?? defaultHeaders,
       ),
       timeout: timeout,
+      context: context,
     );
   }
 
@@ -258,13 +261,14 @@ class ApiService {
   static Future<bool> _refreshTokenIfNeeded(BuildContext? context) async {
     if (_refreshToken == null) {
       Logger.warning('No refresh token available');
+      await _handleUnauthorized(context); // Explicitly handle unauthorized if no refresh token
       return false;
     }
 
     try {
       Logger.info('Attempting to refresh token');
       final response = await http.post(
-        Uri.parse('$baseUrl/auth/refresh'),
+        Uri.parse('$baseUrl/auth/refresh-token'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'refreshToken': _refreshToken}),
       ).timeout(_timeout);
@@ -277,51 +281,65 @@ class ApiService {
         if (newToken != null && newRefreshToken != null) {
           await setAuthToken(newToken);
           await setRefreshToken(newRefreshToken);
-          Logger.info('Token refreshed successfully');
+          Logger.info('Token refreshed successfully and set for ApiService');
+           // Explicitly set static variables again for immediate use in retry
+          ApiService._token = newToken;
+          ApiService._refreshToken = newRefreshToken;
           return true;
         }
       }
 
-      Logger.error('Token refresh failed with response: ${response.body}');
+      Logger.error('Token refresh failed with response: ${response.statusCode} - ${response.body}');
+      // If refresh fails, it means the refresh token is invalid, so handle unauthorized
+      await _handleUnauthorized(context);
       return false;
     } catch (e) {
       Logger.error('Error during token refresh: $e');
+      // If refresh fails due to network error or other exception, handle unauthorized
+      await _handleUnauthorized(context);
       return false;
     }
   }
 
   /// Handle unauthorized access
   static Future<void> _handleUnauthorized(BuildContext? context) async {
-    Logger.warning('Handling unauthorized access');
+    Logger.warning('Handling unauthorized access: Clearing tokens and navigating to login');
     await clearAuthToken();
     await clearRefreshToken();
 
-    if (context != null && context.mounted) {
-      context.go('/login');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Session expired. Please log in again.')),
-      );
-    }
+    // Use a post-frame callback to navigate to avoid issues during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (context != null && context.mounted) {
+         try {
+             context.go('/login');
+             ScaffoldMessenger.of(context).showSnackBar(
+               const SnackBar(content: Text('Session expired. Please log in again.')),
+             );
+         } catch (e) {
+            Logger.error('Error navigating to login: $e');
+         }
+      } else {
+         Logger.warning('Context is not available or mounted, cannot navigate to login.');
+      }
+    });
   }
 
   /// Test the connection to the backend server
   static Future<Map<String, dynamic>> testConnection() async {
     try {
       Logger.info('Testing connection to backend server...');
-      final response = await _makeRequest(
-        () => http.get(
-          Uri.parse('$baseUrl/health'),
-          headers: {'Content-Type': 'application/json'},
-        ),
-        timeout: const Duration(seconds: 5),
-      );
+      // Use a standard http get here instead of _makeRequest to avoid triggering auth logic during init
+      final response = await http.get(
+        Uri.parse('$baseUrl/health'),
+        headers: {'Content-Type': 'application/json'},
+      ).timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         _isConnected = true;
         _lastConnectionCheck = DateTime.now();
         await _updateLastConnectionCheck();
-        
+
         Logger.info('Backend connection successful: ${data['message']}');
         return {
           'success': true,
@@ -332,7 +350,8 @@ class ApiService {
         };
       } else {
         _isConnected = false;
-        Logger.error('Backend connection failed: ${response.statusCode}');
+        Logger.error('Backend connection failed: ${response.statusCode} - ${response.body}');
+        // Do NOT handle unauthorized here, let the actual API calls handle it
         return {
           'success': false,
           'message': 'Connection failed: ${response.statusCode}',

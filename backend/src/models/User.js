@@ -16,6 +16,15 @@ const userSchema = mongoose.Schema(
         'Please add a valid email',
       ],
     },
+    phone: {
+      type: String,
+      required: [true, 'Please add a phone number'],
+      unique: true,
+      match: [
+        /^[0-9]{10}$/,
+        'Please add a valid 10-digit phone number',
+      ],
+    },
     password: {
       type: String,
       required: [true, 'Please add a password'],
@@ -24,7 +33,7 @@ const userSchema = mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ['user', 'admin', 'owner', 'tenant'],
+      enum: ['user', 'admin', 'landlord', 'tenant'],
       default: 'user',
     },
     isAdmin: {

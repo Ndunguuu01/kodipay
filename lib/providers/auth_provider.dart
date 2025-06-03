@@ -2,61 +2,61 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:kodipay/services/api.dart'; 
 import 'package:kodipay/models/auth.dart'; 
+import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AuthProvider with ChangeNotifier {
   AuthModel? _auth;
-  bool _isLoading = false;
   String? _errorMessage;
   
   AuthModel? get auth => _auth;
-  bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
+  set errorMessage(String? value) {
+    _errorMessage = value;
+    notifyListeners();
+  }
 
-  Future<void> login(String phoneNumber, String password, BuildContext context) async {
-    _isLoading = true;
+  Future<void> login(String phone, String password, BuildContext context) async {
     _errorMessage = null;
     notifyListeners();
 
     try {
-      final response = await ApiService.post(
-        '/auth/login',
-        {
-          'phoneNumber': phoneNumber,
-          'password': password,
-        },
-        context: context,
-      );
-
-      // print('Login response status: ${response.statusCode}');
-      // print('Login response body: ${response.body}');
+      final response = await ApiService.post('/auth/login', {
+        'phone': phone,
+        'password': password,
+      });
 
       if (response.statusCode == 200) {
-        final authJson = jsonDecode(response.body);
-        // print('Parsed auth JSON: $authJson');
-        // print('User data from response: ${authJson['user']}');
+        final responseData = jsonDecode(response.body);
+        _auth = AuthModel.fromJson(responseData);
+        _errorMessage = null;
         
-        _auth = AuthModel.fromJson(authJson);
-        // print('Auth model created with name: ${_auth?.name}');
+        // Save credentials and tokens
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('phoneNumber', phone);
+        await prefs.setString('password', password);
+        await prefs.setString('auth_token', responseData['token']);
+        await prefs.setString('refresh_token', responseData['refreshToken']);
         
-        final token = authJson['token'];
-      // print('Token received: $token');
-        await ApiService.setAuthToken(token);
-        await ApiService.setRefreshToken(authJson['refreshToken']);
-      // print('Tokens set in ApiService after login');
+        // Set tokens in ApiService
+        await ApiService.setAuthToken(responseData['token']);
+        await ApiService.setRefreshToken(responseData['refreshToken']);
+
+        // Navigate based on role
+        if (context.mounted) {
+          if (_auth?.role == 'tenant') {
+            context.go('/tenant-home');
+          } else if (_auth?.role == 'landlord') {
+            context.go('/landlord-home');
+          }
+        }
       } else {
-        final errorData = jsonDecode(response.body);
-        _errorMessage = errorData['message'] ?? 'Login failed';
-      // print('Login failed with message: $_errorMessage');
+        final responseData = jsonDecode(response.body);
+        _errorMessage = responseData['message'] ?? 'Login failed';
+        notifyListeners();
       }
     } catch (e) {
-      if (e is UnauthorizedException) {
-        _errorMessage = 'Session expired. Please log in again.';
-      } else {
-        _errorMessage = 'Error during login: $e';
-      }
-      // print('Login error: $_errorMessage');
-    } finally {
-      _isLoading = false;
+      _errorMessage = e.toString().replaceFirst('Exception: ', '');
       notifyListeners();
     }
   }
@@ -66,45 +66,45 @@ class AuthProvider with ChangeNotifier {
     String password, 
     String role,
     String firstName,
-    String lastName, 
+    String lastName,
+    String email,
     BuildContext context, 
   ) async {
-    _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
+      print('Making register API call to /auth/register');
       final response = await ApiService.post(
         '/auth/register',
         {
-          'phoneNumber': phoneNumber,
+          'phone': phoneNumber,
           'password': password,
           'role': role,
-          'firstName': firstName,
-          'lastName': lastName,
           'name': '$firstName $lastName',
+          'email': email,
         },
         context: context,
       );
 
-      // print('Register response status: ${response.statusCode}');
-      // print('Register response body: ${response.body}');
+      print('Register response status: ${response.statusCode}');
+      print('Register response body: ${response.body}');
 
       if (response.statusCode == 201) {
         final authJson = jsonDecode(response.body);
-        // print('Parsed auth JSON: $authJson');
-        // print('User data from response: ${authJson['user']}');
+        print('Parsed auth JSON: $authJson');
         
         _auth = AuthModel.fromJson(authJson);
-        // print('Auth model created with name: ${_auth?.name}');
+        print('Auth model created with name: ${_auth?.name}');
         
         await ApiService.setAuthToken(authJson['token']);
         await ApiService.setRefreshToken(authJson['refreshToken']);
-      // print('Tokens set in ApiService after registration');
+        print('Tokens set in ApiService after registration');
       } else {
         final errorData = jsonDecode(response.body);
         _errorMessage = errorData['message'] ?? 'Registration failed';
-      // print('Registration failed with message: $_errorMessage');
+        print('Registration failed with message: $_errorMessage');
+        throw Exception(_errorMessage);
       }
     } catch (e) {
       if (e is UnauthorizedException) {
@@ -112,16 +112,46 @@ class AuthProvider with ChangeNotifier {
       } else {
         _errorMessage = 'Error during registration: $e';
       }
-      // print('Registration error: $_errorMessage');
+      print('Registration error: $_errorMessage');
+      throw Exception(_errorMessage);
     } finally {
-      _isLoading = false;
       notifyListeners();
     }
   }
 
+  Future<bool> checkAndRestoreAuth() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('auth_token');
+      final refreshToken = prefs.getString('refresh_token');
+      
+      if (token != null && refreshToken != null) {
+        // Set tokens in ApiService
+        await ApiService.setAuthToken(token);
+        await ApiService.setRefreshToken(refreshToken);
+        
+        // Verify token by making a test request
+        final response = await ApiService.get('/auth/verify');
+        if (response.statusCode == 200) {
+          final responseData = jsonDecode(response.body);
+          _auth = AuthModel.fromJson(responseData);
+          return true;
+        }
+      }
+      return false;
+    } catch (e) {
+      print('Error restoring auth state: $e');
+      return false;
+    }
+  }
+
   Future<void> logout() async {
-    // print('Logging out - clearing auth and tokens');
     _auth = null;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('auth_token');
+    await prefs.remove('refresh_token');
+    await prefs.remove('phoneNumber');
+    await prefs.remove('password');
     await ApiService.clearAuthToken();
     await ApiService.clearRefreshToken();
     notifyListeners();

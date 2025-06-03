@@ -46,19 +46,30 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
     setState(() {
       _selectedIndex = index;
     });
+
+    final String currentLocation = GoRouterState.of(context).matchedLocation;
+    String targetRoute;
+
     switch (index) {
       case 0:
-        // Already on TenantHomeScreen
+        targetRoute = '/tenant-home';
         break;
       case 1:
-        context.go('/tenant-home/messaging');
+        targetRoute = '/tenant-home/messaging';
         break;
       case 2:
-        context.go('/tenant-home/complaints');
+        targetRoute = '/tenant-home/complaints';
         break;
       case 3:
-        context.go('/tenant-home/profile');
+        targetRoute = '/tenant-home/profile';
         break;
+      default:
+        targetRoute = '/tenant-home';
+    }
+
+    // Only navigate if we're not already on the target route
+    if (currentLocation != targetRoute) {
+      context.go(targetRoute);
     }
   }
 

@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:kodipay/services/api.dart';
 import 'package:kodipay/models/complaint.dart';
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 class ComplaintProvider with ChangeNotifier {
   List<ComplaintModel> _complaints = [];
@@ -16,7 +18,7 @@ class ComplaintProvider with ChangeNotifier {
   Future<void> fetchComplaints(String userId, BuildContext context) async {
     _setLoadingState(true);
     try {
-      final response = await ApiService.get('/complaints/tenant/$userId', context: context, headers: {});
+      final response = await ApiService.get('/complaints/tenant/$userId', context: context);
       if (response.statusCode == 200) {
         _complaints = _parseComplaints(response.body);
       } else {
@@ -30,22 +32,34 @@ class ComplaintProvider with ChangeNotifier {
   }
 
   // Method to fetch landlord complaints
-  Future<void> fetchLandlordComplaints(String landlordId, BuildContext context) async {
-    _setLoadingState(true);
+  Future<void> fetchLandlordComplaints(BuildContext context) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
     try {
-      final response = await ApiService.get('/complaints/landlord/$landlordId', context: context, headers: {});
+      final response = await ApiService.get(
+        '/complaints/landlord',
+        context: context,
+      );
+
       if (response.statusCode == 200) {
-        _complaints = _parseComplaints(response.body);
+        final List<dynamic> complaintsJson = jsonDecode(response.body);
+        _complaints = complaintsJson.map((json) => ComplaintModel.fromJson(json)).toList();
+      } else if (response.statusCode == 401) {
+        _errorMessage = 'Session expired. Please log in again.';
+        if (context.mounted) {
+          context.go('/login');
+        }
       } else {
-        // Log response body for debugging
-        print('Failed to fetch landlord complaints. Status: \${response.statusCode}, Body: \${response.body}');
-        _setError('Failed to fetch landlord complaints');
+        _errorMessage = 'Failed to fetch complaints: ${response.statusCode} - ${response.body}';
       }
     } catch (e) {
-      print('Exception fetching landlord complaints: \$e');
-      _setError('Error fetching landlord complaints: $e');
+      _errorMessage = 'Error fetching complaints: ${e.toString()}';
+      print('Error details: $e');
     } finally {
-      _setLoadingState(false);
+      _isLoading = false;
+      notifyListeners();
     }
   }
 
@@ -83,7 +97,7 @@ class ComplaintProvider with ChangeNotifier {
       final response = await ApiService.put(
         '/complaints/$complaintId',
          {'status': status},
-        context: context, headers: {},
+        context: context,
       );
       if (response.statusCode == 200) {
         final updatedComplaint = ComplaintModel.fromJson(jsonDecode(response.body));
@@ -105,7 +119,7 @@ class ComplaintProvider with ChangeNotifier {
       final response = await ApiService.put(
         '/complaints/$complaintId',
         {'title': title, 'description': description},
-        context: context, headers: {},
+        context: context,
       );
       if (response.statusCode == 200) {
         final updatedComplaint = ComplaintModel.fromJson(jsonDecode(response.body));

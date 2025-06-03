@@ -32,12 +32,17 @@ void main() async {
         ChangeNotifierProvider(create: (_) => tenant.TenantProvider()),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
       ],
-      child: Consumer<AuthProvider>(
-        builder: (context, authProvider, _) {
-          if (authProvider.auth != null) {
-            Provider.of<BillProvider>(context, listen: false)
-              .setUserId(authProvider.auth!.id);
-          }
+      child: Builder(
+        builder: (context) {
+          final auth = Provider.of<AuthProvider>(context);
+          final billProvider = Provider.of<BillProvider>(context, listen: false);
+
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (auth.auth != null) {
+              billProvider.setUserId(auth.auth!.id);
+            }
+          });
+
           return const MyApp();
         },
       ),
@@ -56,7 +61,7 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'KodiPay',
       theme: themeProvider.theme,
-      routerConfig: app_router.router(Provider.of<AuthProvider>(context)),
+      routerConfig: app_router.router,
     );
   }
 }

@@ -3,31 +3,32 @@ class AuthModel {
   final String? refreshToken;
   final String id;
   final String role;
-  final String phoneNumber;
+  final String phone;
   final String name;
+  final String email;
 
   AuthModel({
     required this.token,
     this.refreshToken,
     required this.id,
-    required this.phoneNumber,
     required this.role,
+    required this.phone,
     required this.name,
+    required this.email,
   });
 
-  factory AuthModel.fromJson(Map<String, dynamic> json) {
-    final user = json['user'] ?? json;
-    final firstName = user['firstName'] as String? ?? '';
-    final lastName = user['lastName'] as String? ?? '';
-    final fullName = user['name'] as String? ?? '$firstName $lastName'.trim();
+  // Get the display role (maps 'owner' to 'landlord' for UI)
+  String get displayRole => role == 'owner' ? 'landlord' : role;
 
+  factory AuthModel.fromJson(Map<String, dynamic> json) {
     return AuthModel(
       token: json['token'] as String,
       refreshToken: json['refreshToken'] as String?,
-      id: user['id'] as String,
-      phoneNumber: user['phoneNumber'] as String,
-      role: user['role'] as String,
-      name: fullName.isNotEmpty ? fullName : 'User',
+      id: json['_id'] as String,
+      phone: json['phone'] as String,
+      role: json['role'] as String,
+      name: json['name'] as String,
+      email: json['email'] as String,
     );
   }
 
@@ -37,12 +38,11 @@ class AuthModel {
     return {
       'token': token,
       if (refreshToken != null) 'refreshToken': refreshToken,
-      'user': {
-        'id': id,
-        'role': role,
-        'name': name,
-        'phoneNumber': phoneNumber,
-      },
+      '_id': id,
+      'phone': phone,
+      'role': role,
+      'name': name,
+      'email': email,
     };
   }
 }

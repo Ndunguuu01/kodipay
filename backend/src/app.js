@@ -1,13 +1,16 @@
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const morgan = require('morgan');
 const compression = require('compression');
-const path = require('path');
+const pathModule = require('path');
 const connectDB = require('./config/database');
 const routes = require('./routes');
+const passwordResetRoutes = require('./routes/passwordResetRoutes');
 
 const app = express();
 
@@ -53,6 +56,7 @@ app.get('/api/health', (req, res) => {
 
 // API routes
 app.use('/api', routes);
+app.use('/api/auth', passwordResetRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -65,9 +69,9 @@ app.use((err, req, res, next) => {
 
 // Serve static files in production
 if (process.env.NODE_ENV === 'production') {
-  app.use(express.static(path.join(__dirname, '../build')));
+  app.use(express.static(pathModule.join(__dirname, '../build')));
   app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, '../build/index.html'));
+    res.sendFile(pathModule.join(__dirname, '../build/index.html'));
   });
 }
 
@@ -80,4 +84,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = app; 
+module.exports = app;

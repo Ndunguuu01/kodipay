@@ -5,6 +5,8 @@ import 'package:kodipay/models/floor_model.dart';
 import 'package:kodipay/services/api.dart';
 import 'package:kodipay/providers/message_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 class PropertyProvider with ChangeNotifier {
   List<PropertyModel> _properties = [];
@@ -15,27 +17,17 @@ class PropertyProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
 
-  // Helper method to get auth token
-  Future<String> _getAuthToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('auth_token');
-    if (token == null) {
-      throw Exception('No authentication token found');
-    }
-    return token;
-  }
-
   /// Fetch properties for a landlord
   Future<void> fetchProperties(BuildContext context) async {
     _isLoading = true;
     _errorMessage = null;
-    notifyListeners();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      notifyListeners();
+    });
 
     try {
-      final token = await _getAuthToken();
       final response = await ApiService.get(
         '/properties/landlord',
-        headers: {'Authorization': 'Bearer $token'},
         context: context,
       );
 
@@ -66,15 +58,25 @@ class PropertyProvider with ChangeNotifier {
             updatedAt: property.updatedAt,
           );
         }).toList();
+      } else if (response.statusCode == 401) {
+        _errorMessage = 'Session expired. Please log in again.';
+        if (context.mounted) {
+          context.go('/login');
+        }
       } else {
         _errorMessage = 'Failed to fetch properties: ${response.statusCode} - ${response.body}';
       }
     } catch (e) {
       _errorMessage = 'Error fetching properties: ${e.toString()}';
       print('Error details: $e');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        notifyListeners();
+      });
     } finally {
       _isLoading = false;
-      notifyListeners();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        notifyListeners();
+      });
     }
   }
 
@@ -88,10 +90,11 @@ class PropertyProvider with ChangeNotifier {
   }) async {
     _isLoading = true;
     _errorMessage = null;
-    notifyListeners();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      notifyListeners();
+    });
 
     try {
-      final token = await _getAuthToken();
       final propertyData = {
         'name': name,
         'address': address,
@@ -103,22 +106,31 @@ class PropertyProvider with ChangeNotifier {
       final response = await ApiService.post(
         '/properties',
         propertyData,
-        headers: {'Authorization': 'Bearer $token'},
         context: null,
       );
 
       if (response.statusCode == 201) {
         final newProperty = PropertyModel.fromJson(jsonDecode(response.body));
         _properties.add(newProperty);
+      } else if (response.statusCode == 401) {
+        _errorMessage = 'Session expired. Please log in again.';
       } else {
         _errorMessage = 'Failed to add property: ${response.statusCode} - ${response.body}';
       }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        notifyListeners();
+      });
     } catch (e) {
       _errorMessage = 'Error adding property: ${e.toString()}';
       print('Error details: $e');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        notifyListeners();
+      });
     } finally {
       _isLoading = false;
-      notifyListeners();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        notifyListeners();
+      });
     }
   }
 
@@ -133,10 +145,11 @@ class PropertyProvider with ChangeNotifier {
   }) async {
     _isLoading = true;
     _errorMessage = null;
-    notifyListeners();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      notifyListeners();
+    });
 
     try {
-      final token = await _getAuthToken();
       final payload = {
         'floorNumber': floorNumber,
         'roomNumber': roomNumber,
@@ -149,10 +162,6 @@ class PropertyProvider with ChangeNotifier {
       final response = await ApiService.put(
         '/properties/$propertyId/assign-tenant',
         payload,
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
         context: null,
       );
 
@@ -171,30 +180,40 @@ class PropertyProvider with ChangeNotifier {
           tenantId: tenantId,
           messageProvider: messageProvider,
         );
+      } else if (response.statusCode == 401) {
+        _errorMessage = 'Session expired. Please log in again.';
       } else if (response.statusCode == 404 && response.body.contains('Tenant not found')) {
         _errorMessage = 'Tenant does not exist. Please verify the tenant ID.';
       } else {
         _errorMessage = 'Failed to assign tenant: ${response.statusCode} - ${response.body}';
       }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        notifyListeners();
+      });
     } catch (e) {
       _errorMessage = 'Error assigning tenant: ${e.toString()}';
       print('Error details: $e');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        notifyListeners();
+      });
     } finally {
       _isLoading = false;
-      notifyListeners();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        notifyListeners();
+      });
     }
   }
 
   /// Delete a property
   Future<void> deleteProperty(String propertyId, BuildContext context) async {
     _isLoading = true;
-    notifyListeners();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      notifyListeners();
+    });
 
     try {
-      final token = await _getAuthToken();
       final response = await ApiService.delete(
         '/properties/$propertyId',
-        headers: {'Authorization': 'Bearer $token'},
         context: context,
       );
 
@@ -203,20 +222,33 @@ class PropertyProvider with ChangeNotifier {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Property deleted successfully')),
         );
+      } else if (response.statusCode == 401) {
+        _errorMessage = 'Session expired. Please log in again.';
+        if (context.mounted) {
+          context.go('/login');
+        }
       } else {
         _errorMessage = 'Failed to delete property: ${response.statusCode} - ${response.body}';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to delete property: ${response.body}')),
         );
       }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        notifyListeners();
+      });
     } catch (e) {
       _errorMessage = 'Error deleting property: ${e.toString()}';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: $e')),
       );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        notifyListeners();
+      });
     } finally {
       _isLoading = false;
-      notifyListeners();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        notifyListeners();
+      });
     }
   }
 
@@ -249,7 +281,9 @@ class PropertyProvider with ChangeNotifier {
   void clearProperties() {
     _properties = [];
     _errorMessage = null;
-    notifyListeners();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      notifyListeners();
+    });
   }
 
   /// Get property by ID
