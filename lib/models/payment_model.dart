@@ -28,4 +28,15 @@ class PaymentModel {
       transactionId: json['transactionId'],
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'tenantId': tenantId,
+      'leaseId': leaseId,
+      'amount': amount,
+      'paymentMethod': paymentMethod,
+      'paymentDate': paymentDate.toIso8601String(),
+      if (transactionId != null) 'transactionId': transactionId,
+    };
+  }
 }

@@ -8,7 +8,6 @@ const tenantSchema = mongoose.Schema(
     },
     email: {
       type: String,
-      required: [true, 'Please add an email'],
       unique: true,
       match: [
         /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
@@ -18,6 +17,7 @@ const tenantSchema = mongoose.Schema(
     phone: {
       type: String,
       required: [true, 'Please add a phone number'],
+      unique: true,
     },
     property: {
       type: mongoose.Schema.Types.ObjectId,

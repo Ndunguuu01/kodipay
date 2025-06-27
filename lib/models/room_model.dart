@@ -1,34 +1,35 @@
 class RoomModel {
   final String id;
   final String roomNumber;
-  final String? tenantId;
   final bool isOccupied;
-  final int? floorNumber;
+  final String? tenantId;
+  final double rentAmount;
 
   RoomModel({
     required this.id,
     required this.roomNumber,
-    this.tenantId,
     required this.isOccupied,
-    this.floorNumber,
+    this.tenantId,
+    required this.rentAmount,
   });
 
   factory RoomModel.fromJson(Map<String, dynamic> json) {
     return RoomModel(
-      id: json['_id'] ?? json['id'] ?? '',
-      roomNumber: json['roomNumber'] ?? '',
-      tenantId: json['tenantId'],
+      id: json['_id'],
+      roomNumber: json['roomNumber'],
       isOccupied: json['isOccupied'] ?? false,
-      floorNumber: json['floorNumber'],
+      tenantId: json['tenantId'],
+      rentAmount: (json['rentAmount'] ?? 0).toDouble(),
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
+      '_id': id,
       'roomNumber': roomNumber,
-      'tenantId': tenantId,
       'isOccupied': isOccupied,
-      'floorNumber': floorNumber,
+      'tenantId': tenantId,
+      'rentAmount': rentAmount,
     };
   }
 }

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:kodipay/providers/auth_provider.dart';
 import 'package:kodipay/providers/tenant_provider.dart';
-import 'package:kodipay/screens/create_tenant_button.dart';
+import 'package:kodipay/models/property_model.dart';
+import 'package:go_router/go_router.dart';
 
 class AddTenantScreen extends StatefulWidget {
   final String propertyId;
@@ -10,6 +10,7 @@ class AddTenantScreen extends StatefulWidget {
   final int floorNumber;
   final String roomNumber;
   final List<String> excludeTenantIds;
+  final PropertyModel property;
 
   const AddTenantScreen({
     super.key,
@@ -17,7 +18,8 @@ class AddTenantScreen extends StatefulWidget {
     required this.roomId,
     required this.floorNumber,
     required this.roomNumber,
-    required this.excludeTenantIds,
+    required this.property,
+    this.excludeTenantIds = const [],
   });
 
   @override
@@ -26,324 +28,288 @@ class AddTenantScreen extends StatefulWidget {
 
 class _AddTenantScreenState extends State<AddTenantScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
   final _phoneController = TextEditingController();
   final _emailController = TextEditingController();
-  final _idController = TextEditingController();
+  final _nationalIdController = TextEditingController();
   bool _isLoading = false;
 
   @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final tenantProvider = Provider.of<TenantProvider>(context, listen: false);
-      print('initState: Fetching unassigned tenants for propertyId: ${widget.propertyId}, roomId: ${widget.roomId}');
-      tenantProvider.fetchUnassignedTenants();
-      // Initialize phone number with +254
-      _phoneController.text = '+254';
-      _phoneController.selection = TextSelection.fromPosition(
-        TextPosition(offset: _phoneController.text.length),
-      );
-    });
+  void dispose() {
+    _firstNameController.dispose();
+    _lastNameController.dispose();
+    _phoneController.dispose();
+    _emailController.dispose();
+    _nationalIdController.dispose();
+    super.dispose();
   }
 
-  void _submitTenant() async {
-    if (_formKey.currentState!.validate()) {
+  Future<void> _submitTenant() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
       final tenantProvider = Provider.of<TenantProvider>(context, listen: false);
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final token = authProvider.auth?.token;
+      final result = await tenantProvider.createTenant(
+        firstName: _firstNameController.text.trim(),
+        lastName: _lastNameController.text.trim(),
+        phoneNumber: _phoneController.text.trim(),
+        email: _emailController.text.trim(),
+        nationalId: _nationalIdController.text.trim(),
+        propertyId: widget.propertyId,
+        roomId: widget.roomId,
+        context: context,
+      );
 
-      if (token == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Authentication token is missing')),
-        );
-        return;
-      }
-
-      setState(() => _isLoading = true);
-
-      try {
-        final name = _nameController.text.trim();
-        String phone = _phoneController.text.trim();
-        final email = _emailController.text.trim().isEmpty ? null : _emailController.text.trim();
-        final nationalId = _idController.text.trim().isEmpty ? null : _idController.text.trim();
-
-        // Normalize phone number: remove spaces, dashes, parentheses
-        phone = phone.replaceAll(RegExp(r'[\s\-\(\)]'), '');
-        // Ensure phone number starts with +254
-        if (!phone.startsWith('+254')) {
-          if (phone.startsWith('0')) {
-            phone = '+254${phone.substring(1)}';
-          } else if (phone.startsWith('7') && phone.length == 9) {
-            phone = '+254$phone';
-          }
+      if (result != null) {
+        if (mounted) {
+          context.pop({'tenant': result.toJson()});
         }
-
-        print('Normalized phone number: $phone');
-
-        print('Creating and assigning tenant: name=$name, phone=$phone, email=$email, nationalId=$nationalId, '
-            'propertyId=${widget.propertyId}, roomId=${widget.roomId}, floorNumber=${widget.floorNumber}, roomNumber=${widget.roomNumber}');
-
-        final success = await tenantProvider.createAndAssignTenant(
-          propertyId: widget.propertyId,
-          name: name,
-          phone: phone,
-          email: email,
-          nationalId: nationalId,
-          token: token,
-          roomId: widget.roomId,
-          floorNumber: widget.floorNumber,
-          roomNumber: widget.roomNumber,
-        );
-
-        if (!mounted) return;
-
-        if (success) {
+      } else {
+        if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Tenant created and assigned successfully')),
-          );
-          Navigator.pop(context, {
-            'tenant': {
-              '_id': tenantProvider.lastCreatedTenantId,
-              'fullName': name,
-              'phoneNumber': phone,
-              'email': email,
-            }
-          });
-        } else {
-          String errorMessage = tenantProvider.error ?? 'Failed to create and assign tenant';
-          if (errorMessage.toLowerCase().contains('duplicate key')) {
-            if (errorMessage.toLowerCase().contains('phone')) {
-              errorMessage = 'Phone number already exists. Please use a different phone number.';
-            } else if (errorMessage.toLowerCase().contains('email')) {
-              errorMessage = 'Email address already exists. Please use a different email or leave it blank.';
-            }
-          }
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(errorMessage)),
+            SnackBar(
+              content: Text(tenantProvider.error ?? 'Failed to create tenant'),
+              backgroundColor: Colors.red,
+            ),
           );
         }
-      } catch (e) {
-        print('Error creating tenant: $e');
+      }
+    } catch (e) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
-
-      setState(() => _isLoading = false);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final tenantProvider = Provider.of<TenantProvider>(context);
-    final isLoading = tenantProvider.isLoading || _isLoading;
-
-    final availableTenants = tenantProvider.tenants
-        .where((tenant) => !widget.excludeTenantIds.contains(tenant.id))
-        .toList();
-
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Add Tenant'),
-        backgroundColor: const Color(0xFF90CAF9),
-      ),
-      body: Stack(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Assigning tenant to:',
-                  style: Theme.of(context).textTheme.titleMedium,
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            // Header Section with Gradient
+            Container(
+              height: 200,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    const Color(0xFF90CAF9),
+                    Colors.blue.shade700,
+                  ],
                 ),
-                const SizedBox(height: 8),
-                Text('Floor: ${widget.floorNumber}'),
-                Text('Room: ${widget.roomNumber}'),
-                const SizedBox(height: 16),
-                Expanded(
-                  child: tenantProvider.error != null
-                      ? Center(child: Text('Error: ${tenantProvider.error}'))
-                      : Column(
-                          children: [
-                            Expanded(
-                              child: availableTenants.isEmpty
-                                  ? const Center(child: Text('No available tenants to assign'))
-                                  : ListView.builder(
-                                      itemCount: availableTenants.length,
-                                      itemBuilder: (context, index) {
-                                        final tenant = availableTenants[index];
-                                        return ListTile(
-                                          title: Text(
-                                            tenant.fullName.isNotEmpty
-                                                ? tenant.fullName
-                                                : 'Unknown (${tenant.phoneNumber.isNotEmpty ? tenant.phoneNumber : "No Phone"})',
-                                          ),
-                                          subtitle: Text(
-                                            tenant.phoneNumber.isNotEmpty ? tenant.phoneNumber : 'No Phone Number',
-                                          ),
-                                          onTap: _isLoading
-                                              ? null
-                                              : () async {
-                                                  setState(() => _isLoading = true);
-                                                  final token = Provider.of<AuthProvider>(context, listen: false).auth?.token;
-
-                                                  if (token == null) {
-                                                    ScaffoldMessenger.of(context).showSnackBar(
-                                                      const SnackBar(content: Text('Authentication token is missing')),
-                                                    );
-                                                    setState(() => _isLoading = false);
-                                                    return;
-                                                  }
-
-                                                  print('Assigning existing tenant: tenantId=${tenant.id}, '
-                                                      'propertyId=${widget.propertyId}, roomId=${widget.roomId}, '
-                                                      'floorNumber=${widget.floorNumber}, roomNumber=${widget.roomNumber}');
-
-                                                  final success = await tenantProvider.assignExistingTenant(
-                                                    roomId: widget.roomId,
-                                                    tenantId: tenant.id,
-                                                    token: token,
-                                                    floorNumber: widget.floorNumber,
-                                                    roomNumber: widget.roomNumber,
-                                                    propertyId: widget.propertyId,
-                                                  );
-
-                                                  if (!mounted) return;
-
-                                                  if (success) {
-                                                    ScaffoldMessenger.of(context).showSnackBar(
-                                                      const SnackBar(content: Text('Tenant assigned successfully')),
-                                                    );
-                                                    Navigator.pop(context, {
-                                                      'tenant': {
-                                                        '_id': tenant.id,
-                                                        'fullName': tenant.fullName,
-                                                        'phoneNumber': tenant.phoneNumber,
-                                                      }
-                                                    });
-                                                  } else {
-                                                    ScaffoldMessenger.of(context).showSnackBar(
-                                                      SnackBar(content: Text(tenantProvider.error ?? 'Failed to assign tenant')),
-                                                    );
-                                                  }
-
-                                                  setState(() => _isLoading = false);
-                                                },
-                                        );
-                                      },
-                                    ),
-                            ),
-                            const SizedBox(height: 16),
-                            const Text('Or create a new tenant:'),
-                            const SizedBox(height: 16),
-                            CreateTenantButton(
-                              propertyId: widget.propertyId,
-                              roomId: widget.roomId,
-                              floorNumber: widget.floorNumber,
-                              roomNumber: widget.roomNumber,
-                              excludeTenantIds: widget.excludeTenantIds,
-                            ),
-                            const SizedBox(height: 16),
-                            Form(
-                              key: _formKey,
-                              child: Column(
-                                children: [
-                                  TextFormField(
-                                    controller: _nameController,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Full Name',
-                                      border: OutlineInputBorder(),
-                                    ),
-                                    validator: (value) =>
-                                        value?.isEmpty ?? true ? 'Please enter a name' : null,
-                                  ),
-                                  const SizedBox(height: 8),
-                                  TextFormField(
-                                    controller: _phoneController,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Phone Number',
-                                      border: OutlineInputBorder(),
-                                      prefixText: '+254 ',
-                                    ),
-                                    keyboardType: TextInputType.phone,
-                                    validator: (value) {
-                                      if (value == null || value.isEmpty) {
-                                        return 'Please enter a phone number';
-                                      }
-                                      // Validate only the digits after +254
-                                      final phoneDigits = value.startsWith('+254') ? value.substring(4) : value;
-                                      if (!RegExp(r'^\d{9}$').hasMatch(phoneDigits)) {
-                                        return 'Please enter a valid phone number with 9 digits after +254';
-                                      }
-                                      return null;
-                                    },
-                                  ),
-                                  const SizedBox(height: 8),
-                                  TextFormField(
-                                    controller: _emailController,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Email (Optional)',
-                                      border: OutlineInputBorder(),
-                                    ),
-                                    keyboardType: TextInputType.emailAddress,
-                                    validator: (value) {
-                                      if (value != null && value.isNotEmpty) {
-                                        if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
-                                          return 'Please enter a valid email';
-                                        }
-                                      }
-                                      return null;
-                                    },
-                                  ),
-                                  const SizedBox(height: 8),
-                                  TextFormField(
-                                    controller: _idController,
-                                    decoration: const InputDecoration(
-                                      labelText: 'National ID (Optional)',
-                                      border: OutlineInputBorder(),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  ElevatedButton(
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: const Color(0xFF90CAF9),
-                                      minimumSize: const Size(double.infinity, 50),
-                                    ),
-                                    onPressed: _isLoading ? null : _submitTenant,
-                                    child: const Text('Create and Assign Tenant'),
-                                  ),
-                                ],
+                borderRadius: const BorderRadius.only(
+                  bottomLeft: Radius.circular(30),
+                  bottomRight: Radius.circular(30),
+                ),
+              ),
+              child: Stack(
+                children: [
+                  // Back Button
+                  Positioned(
+                    top: 40,
+                    left: 20,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: IconButton(
+                        icon: const Icon(Icons.arrow_back, color: Colors.white),
+                        onPressed: () => context.pop(),
+                      ),
+                    ),
+                  ),
+                  // Title
+                  Positioned(
+                    bottom: 20,
+                    left: 20,
+                    right: 20,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Add New Tenant',
+                          style: TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Fill in the details below to add a new tenant to ${widget.property.name}',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.white.withOpacity(0.8),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Form Section
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Personal Details Section
+                    _buildSectionHeader('Personal Details'),
+                    const SizedBox(height: 16),
+                    _buildTextField(
+                      controller: _firstNameController,
+                      label: 'First Name',
+                      icon: Icons.person,
+                      validator: (value) => value == null || value.isEmpty ? 'Required' : null,
+                    ),
+                    const SizedBox(height: 16),
+                    _buildTextField(
+                      controller: _lastNameController,
+                      label: 'Last Name',
+                      icon: Icons.person,
+                      validator: (value) => value == null || value.isEmpty ? 'Required' : null,
+                    ),
+                    const SizedBox(height: 16),
+                    _buildTextField(
+                      controller: _phoneController,
+                      label: 'Phone Number',
+                      icon: Icons.phone,
+                      keyboardType: TextInputType.phone,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) return 'Required';
+                        if (!RegExp(r'^\+2547\d{8}$').hasMatch(value)) {
+                          return 'Must be in format: +2547XXXXXXXX';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    _buildTextField(
+                      controller: _emailController,
+                      label: 'Email (Optional)',
+                      icon: Icons.email,
+                      keyboardType: TextInputType.emailAddress,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) return null;
+                        if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
+                          return 'Enter a valid email address';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    _buildTextField(
+                      controller: _nationalIdController,
+                      label: 'National ID (Optional)',
+                      icon: Icons.badge,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) return null;
+                        if (value.length < 5) {
+                          return 'Must be at least 5 characters';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 24),
+                    // Submit Button
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: _isLoading
+                          ? const Center(child: CircularProgressIndicator())
+                          : ElevatedButton(
+                              onPressed: _submitTenant,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF90CAF9),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: const Text(
+                                'Add Tenant',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
-                          ],
-                        ),
-                ),
-              ],
-            ),
-          ),
-          if (isLoading)
-            Container(
-              color: Colors.black.withOpacity(0.5),
-              child: const Center(
-                child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  ],
                 ),
               ),
             ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _phoneController.dispose();
-    _emailController.dispose();
-    _idController.dispose();
-    super.dispose();
+  Widget _buildSectionHeader(String title) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: const Color(0xFF90CAF9).withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Icon(
+            Icons.settings,
+            color: Color(0xFF90CAF9),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    TextInputType? keyboardType,
+    String? Function(String?)? validator,
+  }) {
+    return TextFormField(
+      controller: controller,
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: Icon(icon),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+      ),
+      keyboardType: keyboardType,
+      validator: validator,
+    );
   }
 }

@@ -1,4 +1,5 @@
 const Property = require('../models/Property');
+const mongoose = require('mongoose');
 
 // @desc    Create new property
 // @route   POST /api/properties
@@ -7,7 +8,7 @@ const createProperty = async (req, res) => {
   try {
     const property = await Property.create({
       ...req.body,
-      owner: req.user._id,
+      landlordId: req.user._id,
     });
 
     res.status(201).json(property);
@@ -22,46 +23,19 @@ const createProperty = async (req, res) => {
 // @access  Private
 const getProperties = async (req, res) => {
   try {
+    console.log('Getting properties for user:', req.user._id);
     const properties = await Property.find({
-      $or: [
-        { owner: req.user._id },
-        { manager: req.user._id },
-      ],
-    }).populate('owner', 'name email');
+      landlordId: req.user._id,
+    }).populate('landlordId', 'name email');
 
+    console.log('Found properties:', properties);
     res.json(properties);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error' });
-  }
-};
-
-// @desc    Get single property
-// @route   GET /api/properties/:id
-// @access  Private
-const getProperty = async (req, res) => {
-  try {
-    const property = await Property.findById(req.params.id)
-      .populate('owner', 'name email')
-      .populate('manager', 'name email')
-      .populate('units.tenant', 'name email');
-
-    if (!property) {
-      return res.status(404).json({ message: 'Property not found' });
-    }
-
-    // Check if user is owner or manager
-    if (
-      property.owner._id.toString() !== req.user._id.toString() &&
-      property.manager?._id.toString() !== req.user._id.toString()
-    ) {
-      return res.status(401).json({ message: 'Not authorized' });
-    }
-
-    res.json(property);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error' });
+    console.error('Error in getProperties:', error);
+    res.status(500).json({ 
+      message: 'Server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 };
 
@@ -76,11 +50,8 @@ const updateProperty = async (req, res) => {
       return res.status(404).json({ message: 'Property not found' });
     }
 
-    // Check if user is owner or manager
-    if (
-      property.owner.toString() !== req.user._id.toString() &&
-      property.manager?.toString() !== req.user._id.toString()
-    ) {
+    // Check if user is landlord
+    if (property.landlordId.toString() !== req.user._id.toString()) {
       return res.status(401).json({ message: 'Not authorized' });
     }
 
@@ -108,12 +79,12 @@ const deleteProperty = async (req, res) => {
       return res.status(404).json({ message: 'Property not found' });
     }
 
-    // Check if user is owner
-    if (property.owner.toString() !== req.user._id.toString()) {
+    // Check if user is landlord
+    if (property.landlordId.toString() !== req.user._id.toString()) {
       return res.status(401).json({ message: 'Not authorized' });
     }
 
-    await property.remove();
+    await property.deleteOne();
 
     res.json({ message: 'Property removed' });
   } catch (error) {
@@ -122,9 +93,6 @@ const deleteProperty = async (req, res) => {
   }
 };
 
-// @desc    Add unit to property
-// @route   POST /api/properties/:id/units
-// @access  Private
 const addUnit = async (req, res) => {
   try {
     const property = await Property.findById(req.params.id);
@@ -135,8 +103,7 @@ const addUnit = async (req, res) => {
 
     // Check if user is owner or manager
     if (
-      property.owner.toString() !== req.user._id.toString() &&
-      property.manager?.toString() !== req.user._id.toString()
+      property.landlordId.toString() !== req.user._id.toString()
     ) {
       return res.status(401).json({ message: 'Not authorized' });
     }
@@ -151,9 +118,6 @@ const addUnit = async (req, res) => {
   }
 };
 
-// @desc    Update unit
-// @route   PUT /api/properties/:id/units/:unitId
-// @access  Private
 const updateUnit = async (req, res) => {
   try {
     const property = await Property.findById(req.params.id);
@@ -162,11 +126,8 @@ const updateUnit = async (req, res) => {
       return res.status(404).json({ message: 'Property not found' });
     }
 
-    // Check if user is owner or manager
-    if (
-      property.owner.toString() !== req.user._id.toString() &&
-      property.manager?.toString() !== req.user._id.toString()
-    ) {
+    // Check if user is landlord
+    if (property.landlordId.toString() !== req.user._id.toString()) {
       return res.status(401).json({ message: 'Not authorized' });
     }
 
@@ -186,9 +147,6 @@ const updateUnit = async (req, res) => {
   }
 };
 
-// @desc    Delete unit
-// @route   DELETE /api/properties/:id/units/:unitId
-// @access  Private
 const deleteUnit = async (req, res) => {
   try {
     const property = await Property.findById(req.params.id);
@@ -197,11 +155,8 @@ const deleteUnit = async (req, res) => {
       return res.status(404).json({ message: 'Property not found' });
     }
 
-    // Check if user is owner or manager
-    if (
-      property.owner.toString() !== req.user._id.toString() &&
-      property.manager?.toString() !== req.user._id.toString()
-    ) {
+    // Check if user is landlord
+    if (property.landlordId.toString() !== req.user._id.toString()) {
       return res.status(401).json({ message: 'Not authorized' });
     }
 
@@ -215,13 +170,49 @@ const deleteUnit = async (req, res) => {
   }
 };
 
+// @desc    Remove tenant from a room
+// @route   PUT /api/properties/:id/rooms/:roomId/remove-tenant
+// @access  Private
+const removeTenantFromRoom = async (req, res) => {
+  try {
+    const property = await Property.findById(req.params.id);
+    if (!property) {
+      return res.status(404).json({ message: 'Property not found' });
+    }
+
+    // Find the room in the floors
+    let found = false;
+    for (let floor of property.floors) {
+      for (let room of floor.rooms) {
+        if (room._id.toString() === req.params.roomId) {
+          room.tenantId = null;
+          room.isOccupied = false;
+          found = true;
+          break;
+        }
+      }
+      if (found) break;
+    }
+
+    if (!found) {
+      return res.status(404).json({ message: 'Room not found' });
+    }
+
+    await property.save();
+    res.json({ message: 'Tenant unassigned from room', property });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 module.exports = {
   createProperty,
   getProperties,
-  getProperty,
   updateProperty,
   deleteProperty,
   addUnit,
   updateUnit,
   deleteUnit,
-}; 
+  removeTenantFromRoom,
+};

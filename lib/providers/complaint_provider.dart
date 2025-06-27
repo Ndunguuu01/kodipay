@@ -1,194 +1,133 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:kodipay/models/complaint_model.dart';
 import 'package:kodipay/services/api.dart';
-import 'package:kodipay/models/complaint.dart';
-import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 
 class ComplaintProvider with ChangeNotifier {
   List<ComplaintModel> _complaints = [];
   bool _isLoading = false;
-  String? _errorMessage;
+  String? _error;
 
   List<ComplaintModel> get complaints => _complaints;
   bool get isLoading => _isLoading;
-  String? get errorMessage => _errorMessage;
+  String? get error => _error;
 
-  // Method to fetch tenant complaints
-  Future<void> fetchComplaints(String userId, BuildContext context) async {
-    _setLoadingState(true);
+  Future<void> fetchComplaints() async {
+    _setLoading(true);
     try {
-      final response = await ApiService.get('/complaints/tenant/$userId', context: context);
+      final response = await ApiService.get('/complaints');
       if (response.statusCode == 200) {
-        _complaints = _parseComplaints(response.body);
+        final List<dynamic> data = jsonDecode(response.body);
+        _complaints = data.map((json) => ComplaintModel.fromJson(json)).toList();
+        _error = null;
       } else {
-        _setError('Failed to fetch complaints');
+        _error = 'Failed to fetch complaints: ${response.statusCode} - ${response.body}';
       }
     } catch (e) {
-      _setError('Error fetching complaints: $e');
+      _error = 'Error fetching complaints: $e';
     } finally {
-      _setLoadingState(false);
+      _setLoading(false);
     }
   }
 
-  // Method to fetch landlord complaints
-  Future<void> fetchLandlordComplaints(BuildContext context) async {
-    _isLoading = true;
-    _errorMessage = null;
-    notifyListeners();
-
+  Future<void> createComplaint({
+    required String title,
+    required String description,
+    required String propertyId,
+    String? roomId,
+    String? priority,
+    String? category,
+  }) async {
+    _setLoading(true);
     try {
-      final response = await ApiService.get(
-        '/complaints/landlord',
-        context: context,
-      );
+      final payload = {
+        'title': title,
+        'description': description,
+        'propertyId': propertyId,
+        if (roomId != null) 'roomId': roomId,
+        if (priority != null) 'priority': priority,
+        if (category != null) 'category': category,
+      };
 
-      if (response.statusCode == 200) {
-        final List<dynamic> complaintsJson = jsonDecode(response.body);
-        _complaints = complaintsJson.map((json) => ComplaintModel.fromJson(json)).toList();
-      } else if (response.statusCode == 401) {
-        _errorMessage = 'Session expired. Please log in again.';
-        if (context.mounted) {
-          context.go('/login');
-        }
-      } else {
-        _errorMessage = 'Failed to fetch complaints: ${response.statusCode} - ${response.body}';
-      }
-    } catch (e) {
-      _errorMessage = 'Error fetching complaints: ${e.toString()}';
-      print('Error details: $e');
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
-  }
-
-  // Method to submit a new complaint
-  Future<void> submitComplaint(String title, String description, String tenantId, String propertyId, BuildContext context) async {
-    _setLoadingState(true);
-    try {
-      final response = await ApiService.post(
-        '/complaints',
-         {
-          'title': title,
-          'description': description,
-          'tenant': tenantId,
-          'property': propertyId,
-        },
-        context: context,
-      );
+      final response = await ApiService.post('/complaints', payload);
       if (response.statusCode == 201) {
-        final newComplaint = ComplaintModel.fromJson(jsonDecode(response.body));
+        final complaintData = jsonDecode(response.body);
+        final newComplaint = ComplaintModel.fromJson(complaintData['data'] ?? complaintData);
         _complaints.add(newComplaint);
+        _error = null;
       } else {
-        _setError('Failed to submit complaint');
+        _error = 'Failed to create complaint: ${response.statusCode} - ${response.body}';
       }
     } catch (e) {
-      _setError('Error submitting complaint: $e');
+      _error = 'Error creating complaint: $e';
     } finally {
-      _setLoadingState(false);
+      _setLoading(false);
     }
   }
 
-  // Method to update complaint status
-  Future<void> updateComplaintStatus(String complaintId, String status, BuildContext context) async {
-    _setLoadingState(true);
+  Future<void> updateComplaintStatus(String complaintId, String newStatus) async {
     try {
-      final response = await ApiService.put(
-        '/complaints/$complaintId',
-         {'status': status},
-        context: context,
-      );
+      final payload = {'status': newStatus};
+      final response = await ApiService.patch('/complaints/$complaintId', payload);
+      
       if (response.statusCode == 200) {
-        final updatedComplaint = ComplaintModel.fromJson(jsonDecode(response.body));
-        _updateComplaintInList(complaintId, updatedComplaint);
+        final complaintData = jsonDecode(response.body);
+        final updatedComplaint = ComplaintModel.fromJson(complaintData['data'] ?? complaintData);
+        
+        final index = _complaints.indexWhere((c) => c.id == complaintId);
+        if (index != -1) {
+          _complaints[index] = updatedComplaint;
+          notifyListeners();
+        }
+        _error = null;
       } else {
-        _setError('Failed to update complaint status');
+        _error = 'Failed to update complaint status: ${response.statusCode} - ${response.body}';
       }
     } catch (e) {
-      _setError('Error updating complaint status: $e');
-    } finally {
-      _setLoadingState(false);
+      _error = 'Error updating complaint status: $e';
     }
   }
 
-  // Method to edit an existing complaint
-  Future<void> editComplaint(String complaintId, String title, String description, BuildContext context) async {
-    _setLoadingState(true);
+  Future<void> deleteComplaint(String complaintId) async {
     try {
-      final response = await ApiService.put(
-        '/complaints/$complaintId',
-        {'title': title, 'description': description},
-        context: context,
-      );
-      if (response.statusCode == 200) {
-        final updatedComplaint = ComplaintModel.fromJson(jsonDecode(response.body));
-        _updateComplaintInList(complaintId, updatedComplaint);
-      } else {
-        _setError('Failed to edit complaint');
-      }
-    } catch (e) {
-      _setError('Error editing complaint: $e');
-    } finally {
-      _setLoadingState(false);
-    }
-  }
-
-  // Method to delete a complaint
-  Future<void> deleteComplaint(String complaintId, BuildContext context) async {
-    _setLoadingState(true);
-    try {
-      final response = await ApiService.delete('/complaints/$complaintId', context: context);
+      final response = await ApiService.delete('/complaints/$complaintId');
       if (response.statusCode == 200) {
         _complaints.removeWhere((c) => c.id == complaintId);
+        notifyListeners();
+        _error = null;
       } else {
-        _setError('Failed to delete complaint');
+        _error = 'Failed to delete complaint: ${response.statusCode} - ${response.body}';
       }
     } catch (e) {
-      _setError('Error deleting complaint: $e');
-    } finally {
-      _setLoadingState(false);
+      _error = 'Error deleting complaint: $e';
     }
   }
 
-  // Private helper methods for error handling and state updates
-
-  // Set the loading state and notify listeners
-  void _setLoadingState(bool isLoading) {
-    _isLoading = isLoading;
-    notifyListeners();
-  }
-
-  // Set the error message and notify listeners
-  void _setError(String errorMessage) {
-    _errorMessage = errorMessage;
-    notifyListeners();
-  }
-
-  // Helper method to parse complaints from response body
-  List<ComplaintModel> _parseComplaints(String responseBody) {
-    final List<dynamic> complaintsJson = jsonDecode(responseBody);
-    return complaintsJson.map((json) => ComplaintModel.fromJson(json)).toList();
-  }
-
-  // Helper method to update a complaint in the list
-  void _updateComplaintInList(String complaintId, ComplaintModel updatedComplaint) {
-    final index = _complaints.indexWhere((c) => c.id == complaintId);
-    if (index != -1) {
-      _complaints[index] = updatedComplaint;
+  ComplaintModel? getComplaintById(String id) {
+    try {
+      return _complaints.firstWhere((complaint) => complaint.id == id);
+    } catch (_) {
+      return null;
     }
   }
 
-  // Clear the error message
-  void clearError() {
-    _errorMessage = null;
-    notifyListeners();
+  List<ComplaintModel> getComplaintsByStatus(String status) {
+    return _complaints.where((complaint) => complaint.status == status).toList();
   }
 
-  // Clear all complaints and reset the error message
+  List<ComplaintModel> getComplaintsByProperty(String propertyId) {
+    return _complaints.where((complaint) => complaint.propertyId == propertyId).toList();
+  }
+
   void clearComplaints() {
     _complaints = [];
-    _errorMessage = null;
+    _error = null;
+    notifyListeners();
+  }
+
+  void _setLoading(bool value) {
+    _isLoading = value;
+    _error = null;
     notifyListeners();
   }
 }

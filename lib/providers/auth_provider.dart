@@ -1,163 +1,31 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:kodipay/services/api.dart'; 
-import 'package:kodipay/models/auth.dart'; 
-import 'package:go_router/go_router.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+
+import 'package:kodipay/models/auth.dart';
+import 'package:kodipay/services/api_service.dart';
+import 'package:kodipay/services/storage_service.dart';
 
 class AuthProvider with ChangeNotifier {
   AuthModel? _auth;
+  bool _isLoading = false;
+  String? _error;
   String? _errorMessage;
-  
+  String? _intendedDestination;
+
   AuthModel? get auth => _auth;
+  bool get isLoading => _isLoading;
+  String? get error => _error;
   String? get errorMessage => _errorMessage;
-  set errorMessage(String? value) {
-    _errorMessage = value;
-    notifyListeners();
-  }
+  bool get isAuthenticated => _auth != null;
+  AuthModel? get user => _auth;
+  String? get intendedDestination => _intendedDestination;
 
-  Future<void> login(String phone, String password, BuildContext context) async {
-    _errorMessage = null;
-    notifyListeners();
-
-    try {
-      final response = await ApiService.post('/auth/login', {
-        'phone': phone,
-        'password': password,
-      });
-
-      if (response.statusCode == 200) {
-        final responseData = jsonDecode(response.body);
-        _auth = AuthModel.fromJson(responseData);
-        _errorMessage = null;
-        
-        // Save credentials and tokens
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('phoneNumber', phone);
-        await prefs.setString('password', password);
-        await prefs.setString('auth_token', responseData['token']);
-        await prefs.setString('refresh_token', responseData['refreshToken']);
-        
-        // Set tokens in ApiService
-        await ApiService.setAuthToken(responseData['token']);
-        await ApiService.setRefreshToken(responseData['refreshToken']);
-
-        // Navigate based on role
-        if (context.mounted) {
-          if (_auth?.role == 'tenant') {
-            context.go('/tenant-home');
-          } else if (_auth?.role == 'landlord') {
-            context.go('/landlord-home');
-          }
-        }
-      } else {
-        final responseData = jsonDecode(response.body);
-        _errorMessage = responseData['message'] ?? 'Login failed';
-        notifyListeners();
-      }
-    } catch (e) {
-      _errorMessage = e.toString().replaceFirst('Exception: ', '');
-      notifyListeners();
-    }
-  }
-
-  Future<void> register(
-    String phoneNumber, 
-    String password, 
-    String role,
-    String firstName,
-    String lastName,
-    String email,
-    BuildContext context, 
-  ) async {
-    _errorMessage = null;
-    notifyListeners();
-
-    try {
-      print('Making register API call to /auth/register');
-      final response = await ApiService.post(
-        '/auth/register',
-        {
-          'phone': phoneNumber,
-          'password': password,
-          'role': role,
-          'name': '$firstName $lastName',
-          'email': email,
-        },
-        context: context,
-      );
-
-      print('Register response status: ${response.statusCode}');
-      print('Register response body: ${response.body}');
-
-      if (response.statusCode == 201) {
-        final authJson = jsonDecode(response.body);
-        print('Parsed auth JSON: $authJson');
-        
-        _auth = AuthModel.fromJson(authJson);
-        print('Auth model created with name: ${_auth?.name}');
-        
-        await ApiService.setAuthToken(authJson['token']);
-        await ApiService.setRefreshToken(authJson['refreshToken']);
-        print('Tokens set in ApiService after registration');
-      } else {
-        final errorData = jsonDecode(response.body);
-        _errorMessage = errorData['message'] ?? 'Registration failed';
-        print('Registration failed with message: $_errorMessage');
-        throw Exception(_errorMessage);
-      }
-    } catch (e) {
-      if (e is UnauthorizedException) {
-        _errorMessage = 'Session expired. Please log in again.';
-      } else {
-        _errorMessage = 'Error during registration: $e';
-      }
-      print('Registration error: $_errorMessage');
-      throw Exception(_errorMessage);
-    } finally {
-      notifyListeners();
-    }
-  }
-
-  Future<bool> checkAndRestoreAuth() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('auth_token');
-      final refreshToken = prefs.getString('refresh_token');
-      
-      if (token != null && refreshToken != null) {
-        // Set tokens in ApiService
-        await ApiService.setAuthToken(token);
-        await ApiService.setRefreshToken(refreshToken);
-        
-        // Verify token by making a test request
-        final response = await ApiService.get('/auth/verify');
-        if (response.statusCode == 200) {
-          final responseData = jsonDecode(response.body);
-          _auth = AuthModel.fromJson(responseData);
-          return true;
-        }
-      }
-      return false;
-    } catch (e) {
-      print('Error restoring auth state: $e');
-      return false;
-    }
-  }
-
-  Future<void> logout() async {
-    _auth = null;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('auth_token');
-    await prefs.remove('refresh_token');
-    await prefs.remove('phoneNumber');
-    await prefs.remove('password');
-    await ApiService.clearAuthToken();
-    await ApiService.clearRefreshToken();
+  void setLoading(bool value) {
+    _isLoading = value;
     notifyListeners();
   }
 
   void clearError() {
+    _error = null;
     _errorMessage = null;
     notifyListeners();
   }
@@ -165,5 +33,288 @@ class AuthProvider with ChangeNotifier {
   void updateAuth(AuthModel updatedAuth) {
     _auth = updatedAuth;
     notifyListeners();
+  }
+
+  void setIntendedDestination(String destination) {
+    _intendedDestination = destination;
+    notifyListeners();
+  }
+
+  void clearIntendedDestination() {
+    _intendedDestination = null;
+    notifyListeners();
+  }
+
+  Future<void> _setAuthState(AuthModel newAuth) async {
+    _auth = newAuth;
+    if (newAuth.token != null) {
+      await StorageService.saveToken(newAuth.token!);
+    }
+    if (newAuth.refreshToken != null) {
+      await StorageService.saveRefreshToken(newAuth.refreshToken!);
+    }
+    notifyListeners();
+  }
+
+  Future<void> _clearAuthState() async {
+    _auth = null;
+    await StorageService.deleteToken();
+    await StorageService.deleteRefreshToken();
+    notifyListeners();
+  }
+
+  Future<void> initialize() async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      final token = await StorageService.getToken();
+      if (token != null) {
+        final response = await ApiService.get('/auth/me');
+        _auth = AuthModel.fromJson(response['data']);
+      }
+    } catch (e) {
+      _error = e.toString();
+      _errorMessage = e.toString();
+      _auth = null;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> login(String phone, String password) async {
+    _isLoading = true;
+    _error = null;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final response = await ApiService.post(
+        '/auth/login',
+        data: {
+          'phone': phone,
+          'password': password,
+        },
+      );
+      _auth = AuthModel.fromJson(response);
+      if (_auth?.token != null) {
+        await StorageService.saveToken(_auth!.token!);
+        await ApiService.setAuthToken(_auth!.token!);
+      }
+      if (_auth?.refreshToken != null) {
+        await StorageService.saveRefreshToken(_auth!.refreshToken!);
+        await ApiService.setRefreshToken(_auth!.refreshToken!);
+      }
+    } catch (e) {
+      _error = e.toString();
+      _errorMessage = e.toString();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> register(String name, String email, String password, String phone) async {
+    _isLoading = true;
+    _error = null;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final response = await ApiService.post(
+        '/auth/register',
+        data: {
+          'name': name,
+          'email': email,
+          'password': password,
+          'phone': phone,
+        },
+      );
+      _auth = AuthModel.fromJson(response['data']);
+      if (_auth?.token != null) {
+        await StorageService.saveToken(_auth!.token!);
+      }
+      if (_auth?.refreshToken != null) {
+        await StorageService.saveRefreshToken(_auth!.refreshToken!);
+      }
+    } catch (e) {
+      _error = e.toString();
+      _errorMessage = e.toString();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> logout() async {
+    _isLoading = true;
+    _error = null;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      await ApiService.post(
+        '/auth/logout',
+        data: {},
+      );
+      await StorageService.deleteToken();
+      await StorageService.deleteRefreshToken();
+      _auth = null;
+    } catch (e) {
+      _error = e.toString();
+      _errorMessage = e.toString();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> updateProfile(String name, String email, String phone) async {
+    _isLoading = true;
+    _error = null;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final response = await ApiService.patch(
+        '/users/${_auth!.id}',
+        data: {
+          'name': name,
+          'email': email,
+          'phone': phone,
+        },
+      );
+      _auth = AuthModel.fromJson(response['data']);
+    } catch (e) {
+      _error = e.toString();
+      _errorMessage = e.toString();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> changePassword(String currentPassword, String newPassword) async {
+    _isLoading = true;
+    _error = null;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      await ApiService.post(
+        '/auth/change-password',
+        data: {
+          'currentPassword': currentPassword,
+          'newPassword': newPassword,
+        },
+      );
+    } catch (e) {
+      _error = e.toString();
+      _errorMessage = e.toString();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> refreshToken() async {
+    try {
+      final refreshToken = await StorageService.getRefreshToken();
+      if (refreshToken == null) {
+        throw Exception('No refresh token found');
+      }
+
+      final response = await ApiService.post(
+        '/auth/refresh-token',
+        data: {'refreshToken': refreshToken},
+      );
+      _auth = AuthModel.fromJson(response['data']);
+      if (_auth?.token != null) {
+        await StorageService.saveToken(_auth!.token!);
+      }
+      if (_auth?.refreshToken != null) {
+        await StorageService.saveRefreshToken(_auth!.refreshToken!);
+      }
+    } catch (e) {
+      _error = e.toString();
+      _errorMessage = e.toString();
+      await logout();
+    }
+  }
+
+  void updateTokensFromRefresh(String newToken, String newRefreshToken) {
+    if (_auth != null) {
+      _auth = AuthModel(
+        id: _auth!.id,
+        name: _auth!.name,
+        email: _auth!.email,
+        phoneNumber: _auth!.phoneNumber,
+        role: _auth!.role,
+        createdAt: _auth!.createdAt,
+        updatedAt: _auth!.updatedAt,
+        token: newToken,
+        refreshToken: newRefreshToken,
+        phone: _auth!.phone,
+      );
+      notifyListeners();
+    }
+  }
+
+  Future<void> checkAuth() async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final token = await StorageService.getToken();
+      if (token == null) {
+        throw Exception('No token found');
+      }
+
+      final response = await ApiService.get('/auth/me');
+      _auth = AuthModel.fromJson(response['data']);
+    } catch (e) {
+      _error = e.toString();
+      _auth = null;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> requestPasswordReset(String email) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      await ApiService.post('/auth/request-password-reset', data: {
+        'email': email,
+      });
+    } catch (e) {
+      _error = e.toString();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> resetPassword(String token, String newPassword) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      await ApiService.post('/auth/reset-password', data: {
+        'token': token,
+        'newPassword': newPassword,
+      });
+    } catch (e) {
+      _error = e.toString();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 }

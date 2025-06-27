@@ -3,6 +3,11 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/lease_provider.dart';
+import '../providers/property_provider.dart';
+import '../providers/tenant_provider.dart';
+import '../models/property_model.dart';
+import '../models/room_model.dart';
+import '../providers/complaint_provider.dart';
 
 class TenantHomeScreen extends StatefulWidget {
   const TenantHomeScreen({super.key});
@@ -17,29 +22,35 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   @override
   void initState() {
     super.initState();
-
-    // Fetch lease data safely after the first frame
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final leaseProvider = Provider.of<LeaseProvider>(context, listen: false);
-      if (authProvider.auth != null) {
-        leaseProvider.fetchLeases(authProvider.auth!.id,authProvider.auth!.token);
-      } else {
-        print('No auth data available, cannot fetch lease');
-      }
-    });
+    _loadData();
   }
 
-  // Dynamic greeting based on time of day
-  String _getGreeting() {
-    final hour = DateTime.now().hour;
-    if (hour < 12) {
-      return "Good Morning";
-    } else if (hour < 17) {
-      return "Good Afternoon";
+  Future<void> _loadData() async {
+    final authProvider = context.read<AuthProvider>();
+    final leaseProvider = context.read<LeaseProvider>();
+    final propertyProvider = context.read<PropertyProvider>();
+    final tenantProvider = context.read<TenantProvider>();
+    final complaintProvider = context.read<ComplaintProvider>();
+
+    if (authProvider.auth != null && authProvider.auth!.token != null) {
+      await leaseProvider.fetchLeases(
+        authProvider.auth!.id,
+        authProvider.auth!.token!,
+      );
+      await propertyProvider.fetchProperties(context);
+      await tenantProvider.fetchTenants();
+      await complaintProvider.fetchComplaints();
     } else {
-      return "Good Evening";
+      print('No auth data available, cannot fetch data');
     }
+  }
+
+  int _calculateSelectedIndex(BuildContext context) {
+    final String location = GoRouterState.of(context).matchedLocation;
+    if (location.startsWith('/tenant-home/messaging')) return 1;
+    if (location.startsWith('/tenant-home/complaints')) return 2;
+    if (location.startsWith('/tenant-home/profile')) return 3;
+    return 0;
   }
 
   void _onItemTapped(int index) {
@@ -77,75 +88,109 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
     final leaseProvider = Provider.of<LeaseProvider>(context);
-    final userName = authProvider.auth?.name ?? "User";
+    final propertyProvider = Provider.of<PropertyProvider>(context);
+    final tenantProvider = Provider.of<TenantProvider>(context);
+    final user = authProvider.auth;
+    final userName = (user?.firstName != null && user?.lastName != null)
+        ? '${user!.firstName} ${user.lastName}'
+        : (user?.firstName ?? user?.name ?? 'User');
+    final profilePhotoUrl = user?.profilePicture;
+    String greeting() {
+      final hour = DateTime.now().hour;
+      if (hour < 12) return 'Good Morning';
+      if (hour < 17) return 'Good Afternoon';
+      return 'Good Evening';
+    }
+
+    // Find the tenant's assigned room
+    RoomModel? assignedRoom;
+    PropertyModel? assignedProperty;
+    int? floorNumber;
+    for (var property in propertyProvider.properties) {
+      for (var floor in property.floors) {
+        for (var room in floor.rooms) {
+          if (room.tenantId == authProvider.auth?.id) {
+            assignedRoom = room;
+            assignedProperty = property;
+            floorNumber = floor.floorNumber;
+            break;
+          }
+        }
+        if (assignedRoom != null) break;
+      }
+      if (assignedRoom != null) break;
+    }
+
+    // Always update _selectedIndex based on the current route
+    _selectedIndex = _calculateSelectedIndex(context);
 
     return Scaffold(
-      body: Column(
-        children: [
-          // Header Section
-          Container(
-            height: MediaQuery.of(context).size.height * 0.3,
-            decoration: const BoxDecoration(
-              color: Color(0xFF90CAF9),
-              borderRadius: BorderRadius.only(
-                bottomLeft: Radius.circular(50),
-                bottomRight: Radius.circular(50),
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            // Header Section with Gradient
+            Container(
+              height: 200,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    const Color(0xFF90CAF9),
+                    Colors.blue.shade700,
+                  ],
+                ),
+                borderRadius: const BorderRadius.only(
+                  bottomLeft: Radius.circular(30),
+                  bottomRight: Radius.circular(30),
+                ),
               ),
-            ),
-            child: Stack(
-              children: [
-                // KodiPay text
-                const Positioned(
-                  top: 40,
-                  left: 20,
-                  child: Text(
-                    'KodiPay',
-                    style: TextStyle(
-                      fontSize: 50,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-                // Settings icon
-                Positioned(
-                  top: 40,
-                  right: 20,
-                  child: IconButton(
-                    icon: const Icon(Icons.settings, color: Colors.black),
-                    onPressed: () {
-                      context.go('/tenant-home/settings');
-                    },
-                  ),
-                ),
-                // User greeting
-                Positioned(
-                  bottom: 20,
-                  left: 20,
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
                   child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      const CircleAvatar(
-                        radius: 30,
-                        backgroundColor: Colors.pink,
-                        child: Icon(Icons.person, size: 40, color: Colors.white),
-                      ),
-                      const SizedBox(width: 10),
+                      // Profile photo or initials
+                      profilePhotoUrl != null && profilePhotoUrl.isNotEmpty
+                          ? CircleAvatar(
+                              radius: 36,
+                              backgroundImage: NetworkImage(profilePhotoUrl),
+                            )
+                          : CircleAvatar(
+                              radius: 36,
+                              backgroundColor: Colors.white.withOpacity(0.2),
+                              child: Text(
+                                userName.isNotEmpty
+                                    ? userName.trim().split(' ').map((e) => e.isNotEmpty ? e[0] : '').join().toUpperCase()
+                                    : '?',
+                                style: const TextStyle(
+                                  fontSize: 28,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                      const SizedBox(width: 20),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Text(
-                            '${_getGreeting()},',
+                            greeting(),
                             style: const TextStyle(
-                              fontSize: 20,
+                              fontSize: 22,
                               color: Colors.white,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
+                          const SizedBox(height: 6),
                           Text(
                             userName,
                             style: const TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
+                              fontSize: 26,
                               color: Colors.white,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
                         ],
@@ -153,190 +198,127 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                     ],
                   ),
                 ),
-              ],
-            ),
-          ),
-          // Quick Actions
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _buildActionButton(
-                  icon: Icons.payment,
-                  label: 'Payment',
-                  onTap: () => context.go('/tenant-home/payment'),
-                ),
-                _buildActionButton(
-                  icon: Icons.account_balance_wallet,
-                  label: 'Bills',
-                  onTap: () => context.go('/tenant-home/bills'),
-                ),
-                _buildActionButton(
-                  icon: Icons.receipt,
-                  label: 'Receipts',
-                  onTap: () => context.go('/tenant-home/receipts'),
-                ),
-              ],
-            ),
-          ),
-          // Complaints Button
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-            child: GestureDetector(
-              onTap: () => context.go('/tenant-home/complaints'),
-              child: Container(
-                padding: const EdgeInsets.all(15),
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Center(
-                  child: Text(
-                    'complaints',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                ),
               ),
             ),
-          ),
-          // Lease Information
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-            child: Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 10,
-                    offset: const Offset(0, 5),
+
+            // Room Information Card
+            if (assignedRoom != null && assignedProperty != null)
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Card(
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(15),
                   ),
-                ],
-              ),
-              child: authProvider.auth == null
-            ? const Center(child: Text('Please log in to view your dashboard'))
-            : leaseProvider.isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : leaseProvider.leases.isEmpty
-                    ? Center(child: Text(leaseProvider.error ?? 'No lease information available'))
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('Lease Information',
-                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 8),
-                          // Display the first lease (or adjust for multiple leases if needed)
-                          _buildLeaseInfoRow('Lease Type', leaseProvider.leases.first.leaseType),
-                          _buildLeaseInfoRow('Amount', 'Kes ${leaseProvider.leases.first.amount.toStringAsFixed(0)}'),
-                          _buildLeaseInfoRow('Start date', leaseProvider.leases.first.startDate),
-                          _buildLeaseInfoRow('Due Date', leaseProvider.leases.first.dueDate),
-                          _buildLeaseInfoRow('Balance', 'Kes ${leaseProvider.leases.first.balance.toStringAsFixed(0)}'),
-                          _buildLeaseInfoRow('Payable Amount', 'Kes ${leaseProvider.leases.first.payableAmount.toStringAsFixed(0)}'),
-                          const SizedBox(height: 16),
-                          ElevatedButton(
-                            onPressed: () {
-                              GoRouter.of(context).push('/tenant-home/complaint');
-                            },
-                            child: const Text('File a Complaint'),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Your Room',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
                           ),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(height: 16),
+                        _buildInfoRow('Property', assignedProperty.name),
+                        _buildInfoRow('Room Number', assignedRoom.roomNumber),
+                        _buildInfoRow('Floor', 'Floor ${floorNumber ?? "N/A"}'),
+                        _buildInfoRow('Status', assignedRoom.isOccupied ? 'Occupied' : 'Vacant'),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+            // Lease Information
+            if (leaseProvider.leases.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Card(
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Lease Information',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        for (var lease in leaseProvider.leases)
+                          Column(
+                            children: [
+                              _buildInfoRow('Lease Type', lease.leaseType),
+                              _buildInfoRow('Amount', 'KES ${lease.amount}'),
+                              _buildInfoRow('Due Date', lease.dueDate),
+                              _buildInfoRow('Status', lease.status),
+                              const Divider(),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
+      bottomNavigationBar: BottomNavigationBar(
+        items: const <BottomNavigationBarItem>[
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home),
+            label: 'Home',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.message),
+            label: 'Messages',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.report_problem),
+            label: 'Complaints',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person),
+            label: 'Profile',
           ),
         ],
-      ),
-      bottomNavigationBar: Container(
-        decoration: const BoxDecoration(
-          color: Color(0xFF90CAF9),
-          borderRadius: BorderRadius.only(
-            topLeft: Radius.circular(50),
-            topRight: Radius.circular(50),
-          ),
-        ),
-        child: BottomNavigationBar(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          items: const [
-            BottomNavigationBarItem(
-              icon: Icon(Icons.home),
-              label: '',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.message),
-              label: 'Messages',
-          
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.description),
-              label: '',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.person),
-              label: '',
-            ),
-          ],
-          currentIndex: _selectedIndex,
-          selectedItemColor: Colors.green,
-          unselectedItemColor: Colors.black,
-          onTap: _onItemTapped,
-          showSelectedLabels: false,
-          showUnselectedLabels: false,
-        ),
+        currentIndex: _selectedIndex,
+        selectedItemColor: const Color(0xFF90CAF9),
+        unselectedItemColor: Colors.grey,
+        onTap: _onItemTapped,
       ),
     );
   }
 
-  Widget _buildActionButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 100,
-        padding: const EdgeInsets.all(15),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              blurRadius: 10,
-              offset: const Offset(0, 5),
-            ),
-          ],
-        ),
-        child: Column(
-          children: [
-            Icon(icon, size: 30),
-            const SizedBox(height: 5),
-            Text(
-              label,
-              style: const TextStyle(fontSize: 16),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLeaseInfoRow(String label, String value) {
+  Widget _buildInfoRow(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
             label,
-            style: const TextStyle(fontSize: 16, color: Colors.black54),
+            style: const TextStyle(
+              fontSize: 16,
+              color: Colors.grey,
+            ),
           ),
           Text(
             value,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ],
       ),

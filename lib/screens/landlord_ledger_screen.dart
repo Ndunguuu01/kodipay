@@ -4,6 +4,7 @@ import '../providers/bill_provider.dart';
 import '../models/bill_model.dart';
 import '../providers/property_provider.dart';
 import 'package:intl/intl.dart';
+import 'package:go_router/go_router.dart';
 
 class LandlordLedgerScreen extends StatefulWidget {
   const LandlordLedgerScreen({super.key});
@@ -18,33 +19,35 @@ class _LandlordLedgerScreenState extends State<LandlordLedgerScreen> {
   String? _selectedPropertyId;
   DateTimeRange? _selectedDateRange;
   String? _selectedStatus;
+  late Future<List<BillModel>> _billsFuture;
 
   @override
   void initState() {
     super.initState();
-    _fetchBills();
+    _billsFuture = _fetchBills();
   }
 
-  Future<void> _fetchBills() async {
-    setState(() {
-      _isLoading = true;
-    });
+  Future<List<BillModel>> _fetchBills() async {
     final billProvider = Provider.of<BillProvider>(context, listen: false);
     try {
       final bills = await billProvider.fetchAllBills(context);
-      setState(() {
-        _bills = bills;
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
       if (mounted) {
+        setState(() {
+          _bills = bills;
+          _isLoading = false;
+        });
+      }
+      return bills;
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to load bills: $e')),
         );
       }
+      return [];
     }
   }
 
@@ -73,155 +76,175 @@ class _LandlordLedgerScreenState extends State<LandlordLedgerScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Ledger'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => context.go('/landlord-home'),
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _fetchBills,
+            onPressed: () {
+              setState(() {
+                _isLoading = true;
+                _billsFuture = _fetchBills();
+              });
+            },
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Summary',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 8),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text('Total Amount:'),
-                            Text(
-                              NumberFormat.currency(symbol: 'KES ').format(totalAmount),
-                              style: const TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                          ],
-                        ),
-                        const Divider(),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text('Paid Amount:'),
-                            Text(
-                              NumberFormat.currency(symbol: 'KES ').format(paidAmount),
-                              style: const TextStyle(color: Colors.green),
-                            ),
-                          ],
-                        ),
-                        const Divider(),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text('Pending Amount:'),
-                            Text(
-                              NumberFormat.currency(symbol: 'KES ').format(pendingAmount),
-                              style: const TextStyle(color: Colors.orange),
-                            ),
-                          ],
-                        ),
-                      ],
+      body: FutureBuilder<List<BillModel>>(
+        future: _billsFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting || _isLoading) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (snapshot.hasError) {
+            return Center(
+              child: Text('Error: ${snapshot.error}'),
+            );
+          }
+
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Summary',
+                      style: Theme.of(context).textTheme.titleLarge,
                     ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    decoration: const InputDecoration(
-                      labelText: 'Property',
-                      border: OutlineInputBorder(),
-                    ),
-                    value: _selectedPropertyId,
-                    items: [
-                      const DropdownMenuItem(
-                        value: null,
-                        child: Text('All Properties'),
+                    const SizedBox(height: 8),
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text('Total Amount:'),
+                                Text(
+                                  NumberFormat.currency(symbol: 'KES ').format(totalAmount),
+                                  style: const TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                            const Divider(),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text('Paid Amount:'),
+                                Text(
+                                  NumberFormat.currency(symbol: 'KES ').format(paidAmount),
+                                  style: const TextStyle(color: Colors.green),
+                                ),
+                              ],
+                            ),
+                            const Divider(),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text('Pending Amount:'),
+                                Text(
+                                  NumberFormat.currency(symbol: 'KES ').format(pendingAmount),
+                                  style: const TextStyle(color: Colors.orange),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
-                      ...propertyProvider.properties.map((property) {
-                        return DropdownMenuItem(
-                          value: property.id,
-                          child: Text(property.name),
-                        );
-                      }),
-                    ],
-                    onChanged: (value) {
-                      setState(() {
-                        _selectedPropertyId = value;
-                      });
-                    },
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    decoration: const InputDecoration(
-                      labelText: 'Status',
-                      border: OutlineInputBorder(),
                     ),
-                    value: _selectedStatus,
-                    items: [
-                      const DropdownMenuItem(
-                        value: null,
-                        child: Text('All Status'),
-                      ),
-                      ...BillStatus.values.map((status) {
-                        return DropdownMenuItem(
-                          value: status.name,
-                          child: Text(status.displayName),
-                        );
-                      }),
-                    ],
-                    onChanged: (value) {
-                      setState(() {
-                        _selectedStatus = value;
-                      });
-                    },
-                  ),
+                  ],
                 ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: ElevatedButton.icon(
-              icon: const Icon(Icons.date_range),
-              label: Text(_selectedDateRange == null
-                  ? 'Select Date Range'
-                  : '${DateFormat('MMM dd').format(_selectedDateRange!.start)} - ${DateFormat('MMM dd').format(_selectedDateRange!.end)}'),
-              onPressed: () async {
-                final picked = await showDateRangePicker(
-                  context: context,
-                  firstDate: DateTime(2020),
-                  lastDate: DateTime.now().add(const Duration(days: 365)),
-                  initialDateRange: _selectedDateRange,
-                );
-                if (picked != null) {
-                  setState(() {
-                    _selectedDateRange = picked;
-                  });
-                }
-              },
-            ),
-          ),
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _filteredBills.isEmpty
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        decoration: const InputDecoration(
+                          labelText: 'Property',
+                          border: OutlineInputBorder(),
+                        ),
+                        value: _selectedPropertyId,
+                        items: [
+                          const DropdownMenuItem(
+                            value: null,
+                            child: Text('All Properties'),
+                          ),
+                          ...propertyProvider.properties.map((property) {
+                            return DropdownMenuItem(
+                              value: property.id,
+                              child: Text(property.name),
+                            );
+                          }),
+                        ],
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedPropertyId = value;
+                          });
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        decoration: const InputDecoration(
+                          labelText: 'Status',
+                          border: OutlineInputBorder(),
+                        ),
+                        value: _selectedStatus,
+                        items: [
+                          const DropdownMenuItem(
+                            value: null,
+                            child: Text('All Status'),
+                          ),
+                          ...BillStatus.values.map((status) {
+                            return DropdownMenuItem(
+                              value: status.name,
+                              child: Text(status.displayName),
+                            );
+                          }),
+                        ],
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedStatus = value;
+                          });
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.date_range),
+                  label: Text(_selectedDateRange == null
+                      ? 'Select Date Range'
+                      : '${DateFormat('MMM dd').format(_selectedDateRange!.start)} - ${DateFormat('MMM dd').format(_selectedDateRange!.end)}'),
+                  onPressed: () async {
+                    final picked = await showDateRangePicker(
+                      context: context,
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                      initialDateRange: _selectedDateRange,
+                    );
+                    if (picked != null) {
+                      setState(() {
+                        _selectedDateRange = picked;
+                      });
+                    }
+                  },
+                ),
+              ),
+              Expanded(
+                child: _filteredBills.isEmpty
                     ? const Center(child: Text('No bills found'))
                     : ListView.builder(
                         itemCount: _filteredBills.length,
@@ -263,8 +286,10 @@ class _LandlordLedgerScreenState extends State<LandlordLedgerScreen> {
                           );
                         },
                       ),
-          ),
-        ],
+              ),
+            ],
+          );
+        },
       ),
     );
   }

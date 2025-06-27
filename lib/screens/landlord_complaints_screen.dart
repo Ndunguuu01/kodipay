@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:kodipay/providers/auth_provider.dart';
 import 'package:kodipay/providers/complaint_provider.dart';
 
 class LandlordComplaintsScreen extends StatefulWidget {
@@ -14,9 +13,12 @@ class _LandlordComplaintsScreenState extends State<LandlordComplaintsScreen> {
   @override
   void initState() {
     super.initState();
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    _loadComplaints();
+  }
+
+  Future<void> _loadComplaints() async {
     final complaintProvider = Provider.of<ComplaintProvider>(context, listen: false);
-    complaintProvider.fetchLandlordComplaints(authProvider.auth!.id, context);
+    await complaintProvider.fetchLandlordComplaints(context);
   }
 
   @override

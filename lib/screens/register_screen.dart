@@ -12,36 +12,34 @@ class RegisterScreen extends StatefulWidget {
 
 class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _phoneNumberController = TextEditingController();
+  final _nameController = TextEditingController();
+  final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
-  final _firstNameController = TextEditingController();
-  final _lastNameController = TextEditingController();
-  final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
   String? _selectedRole;
-  bool _obscurePassword = true;
-  bool _obscureConfirmPassword = true;
+  bool _isPasswordVisible = false;
+  bool _isConfirmPasswordVisible = false;
   bool _isLoading = false;
 
   @override
   void dispose() {
-    _phoneNumberController.dispose();
+    _nameController.dispose();
+    _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
-    _firstNameController.dispose();
-    _lastNameController.dispose();
-    _emailController.dispose();
+    _phoneController.dispose();
     super.dispose();
   }
 
   Future<void> _register() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final phoneNumber = _phoneNumberController.text.trim();
+    final phoneNumber = _phoneController.text.trim();
     final password = _passwordController.text;
     final role = _selectedRole;
-    final firstName = _firstNameController.text.trim();
-    final lastName = _lastNameController.text.trim();
+    final firstName = _nameController.text.trim();
+    final lastName = _nameController.text.trim();
     final email = _emailController.text.trim();
 
     if (role == null) {
@@ -58,22 +56,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     try {
       await context.read<AuthProvider>().register(
-        phoneNumber,
-        password,
-        role,
         firstName,
-        lastName,
         email,
-        context,
+        password,
+        phoneNumber,
       );
-
-      if (!mounted) return;
-      
-      // Navigate based on role
-      if (context.read<AuthProvider>().auth?.role == 'tenant') {
-        context.go('/tenant-home');
-      } else if (context.read<AuthProvider>().auth?.role == 'landlord') {
-        context.go('/landlord-home');
+      if (context.mounted) {
+        context.go('/properties');
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString())),
+        );
       }
     } finally {
       if (!mounted) return;
@@ -88,6 +83,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Register'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => context.pop(),
+        ),
       ),
       body: Consumer<AuthProvider>(
         builder: (context, authProvider, child) {
@@ -99,7 +98,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   TextFormField(
-                    controller: _firstNameController,
+                    controller: _nameController,
                     decoration: const InputDecoration(
                       labelText: 'First Name',
                       border: OutlineInputBorder(),
@@ -113,7 +112,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
-                    controller: _lastNameController,
+                    controller: _nameController,
                     decoration: const InputDecoration(
                       labelText: 'Last Name',
                       border: OutlineInputBorder(),
@@ -145,7 +144,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
-                    controller: _phoneNumberController,
+                    controller: _phoneController,
                     decoration: const InputDecoration(
                       labelText: 'Phone Number',
                       border: OutlineInputBorder(),
@@ -166,16 +165,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       border: const OutlineInputBorder(),
                       suffixIcon: IconButton(
                         icon: Icon(
-                          _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                          _isPasswordVisible ? Icons.visibility_off : Icons.visibility,
                         ),
                         onPressed: () {
                           setState(() {
-                            _obscurePassword = !_obscurePassword;
+                            _isPasswordVisible = !_isPasswordVisible;
                           });
                         },
                       ),
                     ),
-                    obscureText: _obscurePassword,
+                    obscureText: _isPasswordVisible,
                     validator: (value) {
                       if (value == null || value.isEmpty) {
                         return 'Please enter a password';
@@ -194,16 +193,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       border: const OutlineInputBorder(),
                       suffixIcon: IconButton(
                         icon: Icon(
-                          _obscureConfirmPassword ? Icons.visibility_off : Icons.visibility,
+                          _isConfirmPasswordVisible ? Icons.visibility_off : Icons.visibility,
                         ),
                         onPressed: () {
                           setState(() {
-                            _obscureConfirmPassword = !_obscureConfirmPassword;
+                            _isConfirmPasswordVisible = !_isConfirmPasswordVisible;
                           });
                         },
                       ),
                     ),
-                    obscureText: _obscureConfirmPassword,
+                    obscureText: _isConfirmPasswordVisible,
                     validator: (value) {
                       if (value == null || value.isEmpty) {
                         return 'Please confirm your password';

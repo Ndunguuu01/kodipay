@@ -6,6 +6,8 @@ const {
   getPayment,
   updatePaymentStatus,
   getPaymentStats,
+  mpesaStkPush,
+  mpesaCallback,
 } = require('../controllers/paymentController');
 const { protect } = require('../middleware/authMiddleware');
 
@@ -25,5 +27,11 @@ router.route('/:id')
 
 router.route('/:id/status')
   .put(updatePaymentStatus);
+
+// M-Pesa STK Push (can be protected or public)
+router.post('/mpesa/stkpush', mpesaStkPush);
+
+// M-Pesa Callback (public)
+router.post('/mpesa/callback', mpesaCallback);
 
 module.exports = router; 

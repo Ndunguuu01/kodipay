@@ -5,6 +5,7 @@ import 'package:kodipay/providers/message_provider.dart';
 import 'package:kodipay/providers/property_provider.dart';
 import 'package:intl/intl.dart';
 import 'package:kodipay/models/message_model.dart';
+import 'dart:developer' as developer;
 
 class GroupChatScreen extends StatefulWidget {
   final String propertyId;
@@ -29,70 +30,110 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
     // Fetch property details
     final property = propertyProvider.getPropertyById(widget.propertyId);
     if (property == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Property not found')),
-      );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Property not found')),
+        );
+      });
       return;
     }
 
-    // Fetch group messages
-    messageProvider.fetchGroupMessages(widget.propertyId, context).then((_) {
-      if (messageProvider.errorMessage != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(messageProvider.errorMessage!)),
-        );
-      }
-      // Scroll to bottom after messages are loaded
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_scrollController.hasClients) {
-          _scrollController.animateTo(
-            _scrollController.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOut,
+    // Fetch group messages using post-frame callback
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      messageProvider.fetchGroupMessages(widget.propertyId).then((_) {
+        if (messageProvider.errorMessage != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(messageProvider.errorMessage!)),
           );
         }
+        // Scroll to bottom after messages are loaded
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_scrollController.hasClients) {
+            _scrollController.animateTo(
+              _scrollController.position.maxScrollExtent,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOut,
+            );
+          }
+        });
       });
     });
 
     // Join the group chat room
-    messageProvider.joinGroupChat(widget.propertyId);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      messageProvider.joinGroupChat(widget.propertyId);
+    });
   }
 
   void _sendMessage() {
     final messageProvider = Provider.of<MessageProvider>(context, listen: false);
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final content = _messageController.text.trim();
-    if (content.isNotEmpty) {
-      messageProvider.sendGroupMessage(
-        widget.propertyId,
-        authProvider.auth!.id,
-        content,
-      );
-      // Optimistically add the message
-      messageProvider.groupMessages.add(
-        MessageModel(
-          id: DateTime.now().toString(),
-          senderId: authProvider.auth!.id,
-          senderPhoneNumber: authProvider.auth!.phoneNumber,
-          content: content,
-          timestamp: DateTime.now(),
-          isGroupMessage: true,
-          propertyId: widget.propertyId,
-        ),
-      );
-      setState(() {});
-      _messageController.clear();
-      // Scroll to bottom after sending message
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_scrollController.hasClients) {
-          _scrollController.animateTo(
-            _scrollController.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOut,
-          );
-        }
-      });
+
+    // Debug logging for auth state
+    developer.log('Auth state check:', name: 'GroupChatScreen');
+    developer.log('authProvider.auth is null: ${authProvider.auth == null}', name: 'GroupChatScreen');
+    if (authProvider.auth != null) {
+      developer.log('authProvider.auth!.id: "${authProvider.auth!.id}"', name: 'GroupChatScreen');
+      developer.log('authProvider.auth!.id length: ${authProvider.auth!.id.length}', name: 'GroupChatScreen');
+      developer.log('authProvider.auth!.id isEmpty: ${authProvider.auth!.id.isEmpty}', name: 'GroupChatScreen');
     }
+
+    // Validate required fields before sending
+    if (widget.propertyId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Property ID is missing. Cannot send message.')),
+      );
+      return;
+    }
+    if (authProvider.auth == null || authProvider.auth!.id.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('User not authenticated. Cannot send message.')),
+      );
+      return;
+    }
+    if (content.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Message content cannot be empty.')),
+      );
+      return;
+    }
+
+    // Debug logging
+    developer.log('Sending group message with propertyId: ${widget.propertyId}, senderId: ${authProvider.auth!.id}, content: $content', name: 'GroupChatScreen');
+
+    messageProvider.sendGroupMessage(
+      widget.propertyId,
+      authProvider.auth!.id,
+      content,
+    );
+    // Optimistically add the message
+    messageProvider.groupMessages.add(
+      MessageModel(
+        id: DateTime.now().toString(),
+        senderId: authProvider.auth!.id,
+        senderPhoneNumber: authProvider.auth!.phone ?? 'Unknown',
+        senderName: '${authProvider.auth!.firstName ?? ''} ${authProvider.auth!.lastName ?? ''}'.trim(),
+        content: content,
+        timestamp: DateTime.now(),
+        isGroupMessage: true,
+        propertyId: widget.propertyId,
+      ),
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      setState(() {});
+    });
+    _messageController.clear();
+    // Scroll to bottom after sending message
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
   @override
@@ -208,7 +249,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                              isMe ? 'You' : message.senderPhoneNumber,
+                              isMe ? 'You' : (message.senderPhoneNumber.isNotEmpty ? message.senderPhoneNumber : 'Unknown'),
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                           color: isMe ? Colors.white : Colors.black87,
@@ -216,7 +257,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                                       ),
                                       const SizedBox(height: 4),
                                       Text(
-                                        message.content,
+                                        message.content.isNotEmpty ? message.content : '',
                                         style: TextStyle(
                                           color: isMe ? Colors.white : Colors.black87,
                                         ),

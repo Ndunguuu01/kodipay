@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:io';
+import 'dart:io' show Platform, SocketException;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -24,32 +24,26 @@ class ApiService {
   static String? _token;
   static String? _refreshToken;
 
+  // Flag to prevent multiple simultaneous refresh attempts
+  static bool _refreshingToken = false;
+
   // Getters
   static bool get isConnected => _isConnected;
   static DateTime? get lastConnectionCheck => _lastConnectionCheck;
 
   static String get baseUrl {
-    if (kReleaseMode) {
-      // Production URL
-      return 'https://api.kodipay.com/api';
-    } else if (kDebugMode) {
-      // Development URL
-      return 'http://192.168.100.71:5000/api';
-    } else {
-      // Staging URL
-      return 'https://staging-api.kodipay.com/api';
-    }
+    // Use local backend address
+    return 'http://192.168.100.71:5000/api';
   }
 
   /// Initialize the service
   static Future<void> initialize() async {
+    WidgetsFlutterBinding.ensureInitialized(); // Ensure Flutter binding is initialized
     try {
       final prefs = await SharedPreferences.getInstance();
-      // Explicitly load and set tokens
       _token = prefs.getString(_tokenKey);
       _refreshToken = prefs.getString(_refreshTokenKey);
-      ApiService._token = _token; // Ensure static variables are set
-      ApiService._refreshToken = _refreshToken;
+      Logger.info('ApiService initialized with refresh token: ${_refreshToken != null ? '_refreshToken exists' : 'No refresh token'}');
       _lastConnectionCheck = DateTime.tryParse(
         prefs.getString(_lastConnectionCheckKey) ?? '',
       );
@@ -57,16 +51,29 @@ class ApiService {
       Logger.info('ApiService initialized with token: ${_token != null ? 'Token exists' : 'No token'}');
       
       // Test connection on initialization
-      await ApiService.testConnection();
+      await testConnection();
     } catch (e) {
       Logger.error('Error initializing ApiService: $e');
       _isConnected = false;
     }
   }
 
+  /// Get the current auth token
+  static Future<String?> getAuthToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_tokenKey);
+  }
+
+  /// Get the current refresh token
+  static Future<String?> getRefreshToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_refreshTokenKey);
+  }
+
   /// Set the access token
   static Future<void> setAuthToken(String? token) async {
     try {
+      Logger.info('ApiService: Setting auth token: ${token != null ? "SET" : "CLEARED"}');
       _token = token;
       final prefs = await SharedPreferences.getInstance();
       if (token != null) {
@@ -101,7 +108,10 @@ class ApiService {
   }
 
   /// Clear tokens on logout or failure
-  static Future<void> clearAuthToken() async => await setAuthToken(null);
+  static Future<void> clearAuthToken() async {
+    Logger.info('ApiService: Clearing auth token');
+    await setAuthToken(null);
+  }
   static Future<void> clearRefreshToken() async => await setRefreshToken(null);
 
   /// Make HTTP request with retry logic and error handling
@@ -113,10 +123,34 @@ class ApiService {
     BuildContext? context,
   }) async {
     int retryCount = 0;
+    http.Response? response;
+
     while (true) {
       try {
-        final response = await request().timeout(timeout);
+        // Test connection before making request
+        if (!_isConnected) {
+          final connectionTest = await testConnection();
+          if (!connectionTest['success']) {
+            throw Exception('No connection to server: ${connectionTest['message']}');
+          }
+        }
+
+        // Rebuild headers with the current token before each attempt
+        final currentHeaders = {
+          'Content-Type': 'application/json',
+          if (_token != null) 'Authorization': 'Bearer $_token',
+        };
         
+        // Log the request details
+        Logger.info('Making request to: $baseUrl');
+        Logger.info('Headers: $currentHeaders');
+
+        response = await request().timeout(timeout);
+
+        // Log the response
+        Logger.info('Response status: ${response.statusCode}');
+        Logger.info('Response body: ${response.body}');
+
         // Update connection status
         _isConnected = true;
         _lastConnectionCheck = DateTime.now();
@@ -125,37 +159,61 @@ class ApiService {
         // Handle unauthorized access
         if (response.statusCode == 401) {
           Logger.warning('Received 401 response, attempting token refresh');
-          final refreshSuccess = await _refreshTokenIfNeeded(context);
+
+          // Prevent multiple simultaneous refresh attempts
+          if (_refreshingToken) {
+            Logger.warning('Token refresh already in progress, waiting...');
+            await Future.delayed(const Duration(seconds: 1));
+            if (retryCount < maxRetries) {
+              retryCount++;
+              continue;
+            } else {
+              Logger.error('Max retries reached while waiting for token refresh.');
+              await _handleUnauthorized(context);
+              return response;
+            }
+          }
+
+          _refreshingToken = true;
+          final refreshSuccess = await refreshTokenIfNeeded(context);
+          _refreshingToken = false;
+
           if (refreshSuccess && retryCount < maxRetries) {
-            Logger.info('Token refreshed, retrying request');
-            await Future.delayed(retryDelay);
+            Logger.info('Token refreshed, retrying request with new token (Attempt ${retryCount + 1})');
             retryCount++;
+            await Future.delayed(retryDelay);
             continue;
           } else {
+            Logger.error('Token refresh failed or max retries reached after refresh.');
             await _handleUnauthorized(context);
             return response;
           }
         }
 
+        // Handle other server errors with retry
         if (response.statusCode >= 500 && retryCount < maxRetries) {
           Logger.warning('Server error (${response.statusCode}), retrying... (${retryCount + 1}/$maxRetries)');
           await Future.delayed(retryDelay);
           retryCount++;
           continue;
         }
+
+        // Return successful response or client errors/non-retryable server errors
         return response;
       } catch (e) {
         if (e is http.ClientException || e is SocketException) {
           _isConnected = false;
           Logger.error('Network error: $e');
+          Logger.error('Failed to connect to server at: $baseUrl');
         }
-        
+
         if (retryCount < maxRetries) {
           Logger.warning('Request failed, retrying... (${retryCount + 1}/$maxRetries)');
           await Future.delayed(retryDelay);
           retryCount++;
           continue;
         }
+        // Rethrow the exception if max retries are reached
         rethrow;
       }
     }
@@ -177,16 +235,17 @@ class ApiService {
     Map<String, String>? headers,
     Duration timeout = _timeout,
   }) async {
-    final defaultHeaders = {
-      'Content-Type': 'application/json',
-      if (_token != null) 'Authorization': 'Bearer $_token',
-    };
-
     return _makeRequest(
-      () => http.get(
-        Uri.parse('$baseUrl$endpoint'),
-        headers: headers ?? defaultHeaders,
-      ),
+      () { // Define defaultHeaders inside the lambda to capture latest _token
+        final defaultHeaders = {
+          'Content-Type': 'application/json',
+          if (_token != null) 'Authorization': 'Bearer $_token',
+        };
+        return http.get(
+          Uri.parse('$baseUrl$endpoint'),
+          headers: headers ?? defaultHeaders,
+        );
+      },
       timeout: timeout,
       context: context,
     );
@@ -198,17 +257,18 @@ class ApiService {
     Map<String, String>? headers,
     Duration timeout = _timeout,
   }) async {
-    final defaultHeaders = {
-      'Content-Type': 'application/json',
-      if (_token != null) 'Authorization': 'Bearer $_token',
-    };
-
     return _makeRequest(
-      () => http.post(
-        Uri.parse('$baseUrl$endpoint'),
-        headers: headers ?? defaultHeaders,
-        body: json.encode(data),
-      ),
+      () { // Define defaultHeaders inside the lambda to capture latest _token
+        final defaultHeaders = {
+          'Content-Type': 'application/json',
+          if (_token != null) 'Authorization': 'Bearer $_token',
+        };
+        return http.post(
+          Uri.parse('$baseUrl$endpoint'),
+          headers: headers ?? defaultHeaders,
+          body: json.encode(data),
+        );
+      },
       timeout: timeout,
       context: context,
     );
@@ -220,17 +280,41 @@ class ApiService {
     Map<String, String>? headers,
     Duration timeout = _timeout,
   }) async {
-    final defaultHeaders = {
-      'Content-Type': 'application/json',
-      if (_token != null) 'Authorization': 'Bearer $_token',
-    };
-
     return _makeRequest(
-      () => http.put(
-        Uri.parse('$baseUrl$endpoint'),
-        headers: headers ?? defaultHeaders,
-        body: json.encode(data),
-      ),
+      () { // Define defaultHeaders inside the lambda to capture latest _token
+        final defaultHeaders = {
+          'Content-Type': 'application/json',
+          if (_token != null) 'Authorization': 'Bearer $_token',
+        };
+        return http.put(
+          Uri.parse('$baseUrl$endpoint'),
+          headers: headers ?? defaultHeaders,
+          body: json.encode(data),
+        );
+      },
+      timeout: timeout,
+      context: context,
+    );
+  }
+
+  /// Patch request with authentication
+  static Future<http.Response> patch(String endpoint, dynamic data, {
+    BuildContext? context,
+    Map<String, String>? headers,
+    Duration timeout = _timeout,
+  }) async {
+    return _makeRequest(
+      () { // Define defaultHeaders inside the lambda to capture latest _token
+        final defaultHeaders = {
+          'Content-Type': 'application/json',
+          if (_token != null) 'Authorization': 'Bearer $_token',
+        };
+        return http.patch(
+          Uri.parse('$baseUrl$endpoint'),
+          headers: headers ?? defaultHeaders,
+          body: json.encode(data),
+        );
+      },
       timeout: timeout,
       context: context,
     );
@@ -242,31 +326,32 @@ class ApiService {
     Map<String, String>? headers,
     Duration timeout = _timeout,
   }) async {
-    final defaultHeaders = {
-      'Content-Type': 'application/json',
-      if (_token != null) 'Authorization': 'Bearer $_token',
-    };
-
     return _makeRequest(
-      () => http.delete(
-        Uri.parse('$baseUrl$endpoint'),
-        headers: headers ?? defaultHeaders,
-      ),
+      () { // Define defaultHeaders inside the lambda to capture latest _token
+        final defaultHeaders = {
+          'Content-Type': 'application/json',
+          if (_token != null) 'Authorization': 'Bearer $_token',
+        };
+        return http.delete(
+          Uri.parse('$baseUrl$endpoint'),
+          headers: headers ?? defaultHeaders,
+        );
+      },
       timeout: timeout,
       context: context,
     );
   }
 
   /// Refresh token logic
-  static Future<bool> _refreshTokenIfNeeded(BuildContext? context) async {
+  static Future<bool> refreshTokenIfNeeded(BuildContext? context) async {
     if (_refreshToken == null) {
       Logger.warning('No refresh token available');
-      await _handleUnauthorized(context); // Explicitly handle unauthorized if no refresh token
       return false;
     }
 
     try {
       Logger.info('Attempting to refresh token');
+      
       final response = await http.post(
         Uri.parse('$baseUrl/auth/refresh-token'),
         headers: {'Content-Type': 'application/json'},
@@ -281,54 +366,47 @@ class ApiService {
         if (newToken != null && newRefreshToken != null) {
           await setAuthToken(newToken);
           await setRefreshToken(newRefreshToken);
-          Logger.info('Token refreshed successfully and set for ApiService');
-           // Explicitly set static variables again for immediate use in retry
-          ApiService._token = newToken;
-          ApiService._refreshToken = newRefreshToken;
+          Logger.info('Token refreshed successfully');
+
+          // Update AuthProvider with new tokens
+          if (context != null && context.mounted) {
+            context.read<AuthProvider>().updateTokensFromRefresh(newToken, newRefreshToken);
+          }
           return true;
         }
       }
 
       Logger.error('Token refresh failed with response: ${response.statusCode} - ${response.body}');
-      // If refresh fails, it means the refresh token is invalid, so handle unauthorized
-      await _handleUnauthorized(context);
       return false;
     } catch (e) {
       Logger.error('Error during token refresh: $e');
-      // If refresh fails due to network error or other exception, handle unauthorized
-      await _handleUnauthorized(context);
       return false;
     }
   }
 
   /// Handle unauthorized access
   static Future<void> _handleUnauthorized(BuildContext? context) async {
-    Logger.warning('Handling unauthorized access: Clearing tokens and navigating to login');
-    await clearAuthToken();
-    await clearRefreshToken();
-
-    // Use a post-frame callback to navigate to avoid issues during build
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (context != null && context.mounted) {
-         try {
-             context.go('/login');
-             ScaffoldMessenger.of(context).showSnackBar(
-               const SnackBar(content: Text('Session expired. Please log in again.')),
-             );
-         } catch (e) {
-            Logger.error('Error navigating to login: $e');
-         }
-      } else {
-         Logger.warning('Context is not available or mounted, cannot navigate to login.');
+    Logger.warning('Handling unauthorized access');
+    
+    // Only clear tokens if refresh token is also invalid
+    if (context != null && context.mounted) {
+      final authProvider = context.read<AuthProvider>();
+      if (authProvider.auth != null) {
+        // Try to refresh token first
+        final refreshSuccess = await refreshTokenIfNeeded(context);
+        if (!refreshSuccess) {
+          // Only logout if refresh failed
+          await handleUnauthorized(context);
+        }
       }
-    });
+    }
   }
 
   /// Test the connection to the backend server
   static Future<Map<String, dynamic>> testConnection() async {
     try {
-      Logger.info('Testing connection to backend server...');
-      // Use a standard http get here instead of _makeRequest to avoid triggering auth logic during init
+      Logger.info('Testing connection to backend server at: $baseUrl');
+      
       final response = await http.get(
         Uri.parse('$baseUrl/health'),
         headers: {'Content-Type': 'application/json'},
@@ -351,7 +429,6 @@ class ApiService {
       } else {
         _isConnected = false;
         Logger.error('Backend connection failed: ${response.statusCode} - ${response.body}');
-        // Do NOT handle unauthorized here, let the actual API calls handle it
         return {
           'success': false,
           'message': 'Connection failed: ${response.statusCode}',
@@ -366,6 +443,14 @@ class ApiService {
         'message': 'Connection error',
         'error': e.toString(),
       };
+    }
+  }
+
+  static Future<void> handleUnauthorized(BuildContext context) async {
+    final authProvider = context.read<AuthProvider>();
+    await authProvider.logout();
+    if (context.mounted) {
+      context.go('/login');
     }
   }
 }

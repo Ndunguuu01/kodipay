@@ -9,7 +9,7 @@ class PropertyModel {
   final int? occupiedRooms;
   final List<FloorModel> floors;
   final String? description;
-  final String? landlordId;
+  final dynamic landlordId;
   final String? imageUrl;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -28,6 +28,15 @@ class PropertyModel {
     required this.createdAt,
     required this.updatedAt,
   });
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is PropertyModel && other.id == id;
+  }
+
+  @override
+  int get hashCode => id.hashCode;
 
   factory PropertyModel.fromJson(Map<String, dynamic> json) {
     return PropertyModel(
@@ -59,6 +68,20 @@ class PropertyModel {
       'landlordId': landlordId,
       'imageUrl': imageUrl,
     };
+  }
+
+  String get landlordIdString {
+    if (landlordId is Map) {
+      return landlordId['_id'] ?? '';
+    }
+    return landlordId?.toString() ?? '';
+  }
+
+  String get landlordName {
+    if (landlordId is Map) {
+      return landlordId['name'] ?? '';
+    }
+    return '';
   }
 
   static final PropertyModel empty = PropertyModel(

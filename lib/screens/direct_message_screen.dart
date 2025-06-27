@@ -29,8 +29,17 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
   @override
   void initState() {
     super.initState();
-    final messageProvider = Provider.of<MessageProvider>(context, listen: false);
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    if (authProvider.auth?.id == null || authProvider.auth!.id.isEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('You are not logged in. Please log in again.')),
+        );
+        Navigator.of(context).pop();
+      });
+      return;
+    }
+    final messageProvider = Provider.of<MessageProvider>(context, listen: false);
     final tenantProvider = Provider.of<TenantProvider>(context, listen: false);
 
     // Fetch tenant details
@@ -43,12 +52,12 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
         lastName: '',
         status: '',
         paymentStatus: '',
-        propertyId: '',
+        property: null,
       ),
     );
 
     // Fetch direct messages
-    messageProvider.fetchDirectMessages(widget.recipientId, context).then((_) {
+    messageProvider.fetchDirectMessages(widget.recipientId).then((_) {
       if (messageProvider.errorMessage != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(messageProvider.errorMessage!)),
@@ -70,45 +79,55 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
     messageProvider.joinDirectMessage(authProvider.auth!.id, widget.recipientId);
   }
 
-  Future<void> _sendMessage(BuildContext context) async {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+  void _sendMessage() {
     final messageProvider = Provider.of<MessageProvider>(context, listen: false);
-
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final content = _messageController.text.trim();
-    if (content.isEmpty) return;
-
-    messageProvider.sendDirectMessage(
-      senderId: authProvider.auth!.id,
-      recipientId: widget.recipientId,
-      content: content,
-    );
-
-    // Optimistically add the message to the list
-    messageProvider.directMessages.add(
-      MessageModel(
-        id: DateTime.now().toString(),
-        senderId: authProvider.auth!.id,
-        senderPhoneNumber: authProvider.auth!.phoneNumber,
-        recipientId: widget.recipientId,
-        recipientPhoneNumber: widget.recipientPhoneNumber,
-        content: content,
-        timestamp: DateTime.now(),
-        isGroupMessage: false,
-      ),
-    );
-    setState(() {});
-
-    _messageController.clear();
-    // Scroll to bottom after sending message
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
-    });
+    final senderId = authProvider.auth?.id ?? '';
+    final recipientId = widget.recipientId;
+    print('DM DEBUG: senderId=\x1B[32m$senderId\x1B[0m, recipientId=\x1B[32m$recipientId\x1B[0m, content=\x1B[32m$content\x1B[0m');
+    if (senderId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You are not logged in. Please log in again.')),
+      );
+      return;
+    }
+    if (content.isNotEmpty && senderId.isNotEmpty && recipientId.isNotEmpty) {
+      messageProvider.sendDirectMessage(
+        senderId,
+        recipientId,
+        content,
+      );
+      // Optimistically add the message
+      messageProvider.directMessages.add(
+        MessageModel(
+          id: DateTime.now().toString(),
+          senderId: senderId,
+          senderPhoneNumber: authProvider.auth!.phone,
+          senderName: authProvider.auth?.firstName != null && authProvider.auth?.lastName != null
+              ? '${authProvider.auth!.firstName} ${authProvider.auth!.lastName}'
+              : authProvider.auth?.phone ?? "User",
+          recipientId: recipientId,
+          content: content,
+          timestamp: DateTime.now(),
+          isGroupMessage: false,
+        ),
+      );
+      setState(() {});
+      _messageController.clear();
+      // Scroll to bottom after sending message
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(
+            _scrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        }
+      });
+    } else {
+      print('DM ERROR: One or more required fields are empty.');
+    }
   }
 
   @override
@@ -292,7 +311,7 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
                 IconButton(
                   icon: const Icon(Icons.send),
                   color: const Color(0xFF90CAF9),
-                  onPressed: () async => await _sendMessage(context),
+                  onPressed: _sendMessage,
                 ),
               ],
             ),

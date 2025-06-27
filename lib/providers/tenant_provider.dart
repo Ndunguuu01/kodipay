@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:kodipay/models/tenant_model.dart';
 import 'package:kodipay/services/api.dart';
 import 'dart:math';
+import 'package:provider/provider.dart';
+import 'package:kodipay/providers/auth_provider.dart';
 
 class TenantProvider with ChangeNotifier {
   List<TenantModel> _tenants = [];
@@ -44,16 +46,19 @@ class TenantProvider with ChangeNotifier {
     _setLoading(true);
     try {
       final response = await ApiService.get('/tenants');
-      // print('fetchTenants response: ${response.statusCode} - ${response.body}');
+      print('fetchTenants response status: ${response.statusCode}');
+      print('fetchTenants response body: ${response.body}');
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body);
         _tenants = data.map((json) => TenantModel.fromJson(json)).toList();
+        print('Tenants fetched: ${_tenants.length}');
       } else {
         _error = 'Failed to fetch tenants: ${response.statusCode} - ${response.body}';
+        print(_error);
       }
     } catch (e) {
       _error = 'Error fetching tenants: $e';
-      // print('fetchTenants error: $e');
+      print(_error);
     } finally {
       _setLoading(false);
     }
@@ -325,5 +330,175 @@ class TenantProvider with ChangeNotifier {
     return String.fromCharCodes(
       Iterable.generate(12, (_) => chars.codeUnitAt(random.nextInt(chars.length))),
     );
+  }
+
+  Future<TenantModel?> createTenant({
+    required String firstName,
+    required String lastName,
+    required String phoneNumber,
+    String? email,
+    String? nationalId,
+    required String propertyId,
+    String? roomId,
+    required BuildContext context,
+  }) async {
+    _setLoading(true);
+    _error = null;
+    notifyListeners();
+
+    try {
+      final normalizedPhone = normalizePhoneNumber(phoneNumber);
+      if (!RegExp(r'^\+2547\d{8}$').hasMatch(normalizedPhone)) {
+        _error = 'Invalid phone number format: $normalizedPhone. Must be +254 followed by 9 digits starting with 7.';
+        return null;
+      }
+
+      // Get auth token
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final token = authProvider.auth?.token;
+      if (token == null) {
+        _error = 'Authentication token not found';
+        return null;
+      }
+
+      // Use default password as requested
+      const defaultPassword = 'password123';
+
+      // Create the user account with the correct API endpoint and field names
+      final userPayload = {
+        'name': '${firstName.trim()} ${lastName.trim()}',
+        'email': email?.trim() ?? '${firstName.toLowerCase()}.${lastName.toLowerCase()}@example.com',
+        'phone': normalizedPhone,
+        'password': defaultPassword,
+        'role': 'tenant',
+        if (nationalId != null && nationalId.isNotEmpty) 'nationalId': nationalId.trim(),
+      };
+
+      final userResponse = await ApiService.post(
+        '/auth/register',
+        userPayload,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (userResponse.statusCode != 201) {
+        String errorMessage = 'Failed to create user account: ${userResponse.statusCode}';
+        try {
+          final errorData = jsonDecode(userResponse.body);
+          errorMessage += ' - ${errorData['message'] ?? 'Unknown error'}';
+        } catch (_) {
+          errorMessage += ' - ${userResponse.body}';
+        }
+        _error = errorMessage;
+        return null;
+      }
+
+      final userData = jsonDecode(userResponse.body);
+      final userId = userData['data']['id'] ?? userData['id'];
+      
+      if (userId == null) {
+        _error = 'User creation response missing user id';
+        return null;
+      }
+
+      // Create tenant record
+      final tenantPayload = {
+        'userId': userId,
+        'propertyId': propertyId,
+        'roomId': roomId,
+        'firstName': firstName.trim(),
+        'lastName': lastName.trim(),
+        'phoneNumber': normalizedPhone,
+        'email': email?.trim(),
+        'nationalId': nationalId?.trim(),
+        'status': 'active',
+        'paymentStatus': 'pending',
+      };
+
+      final tenantResponse = await ApiService.post(
+        '/tenants',
+        tenantPayload,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (tenantResponse.statusCode != 201) {
+        String errorMessage = 'Failed to create tenant record: ${tenantResponse.statusCode}';
+        try {
+          final errorData = jsonDecode(tenantResponse.body);
+          errorMessage += ' - ${errorData['message'] ?? 'Unknown error'}';
+        } catch (_) {
+          errorMessage += ' - ${tenantResponse.body}';
+        }
+        _error = errorMessage;
+        return null;
+      }
+
+      final tenantData = jsonDecode(tenantResponse.body);
+      final newTenant = TenantModel.fromJson(tenantData['data'] ?? tenantData);
+      _tenants.add(newTenant);
+
+      // Send SMS notification about default password
+      await _sendPasswordNotification(normalizedPhone, defaultPassword, token);
+
+      return newTenant;
+    } catch (e) {
+      _error = 'Error creating tenant: $e';
+      return null;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _sendPasswordNotification(String phone, String password, String token) async {
+    try {
+      final smsPayload = {
+        'phone': phone,
+        'message': 'Welcome to KodiPay! Your default password is: $password. Please change it after your first login for security.',
+      };
+
+      await ApiService.post(
+        '/notifications/sms',
+        smsPayload,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+    } catch (e) {
+      // Don't fail the tenant creation if SMS fails
+      print('Failed to send SMS notification: $e');
+    }
+  }
+
+  Future<void> deleteTenant(String tenantId, BuildContext context) async {
+    _setLoading(true);
+    _error = null;
+    notifyListeners();
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final token = authProvider.auth?.token;
+      if (token == null) {
+        _error = 'Authentication token not found';
+        return;
+      }
+      await ApiService.setAuthToken(token);
+      final response = await ApiService.delete('/tenants/$tenantId');
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        _tenants.removeWhere((t) => t.id == tenantId);
+        notifyListeners();
+      } else {
+        _error = 'Failed to delete tenant: \\${response.statusCode} - \\${response.body}';
+      }
+    } catch (e) {
+      _error = 'Error deleting tenant: \\${e.toString()}';
+    } finally {
+      _setLoading(false);
+    }
   }
 }

@@ -3,12 +3,9 @@ const router = express.Router();
 const {
   createProperty,
   getProperties,
-  getProperty,
   updateProperty,
   deleteProperty,
-  addUnit,
-  updateUnit,
-  deleteUnit,
+  removeTenantFromRoom,
 } = require('../controllers/propertyController');
 const { protect } = require('../middleware/auth');
 
@@ -21,16 +18,10 @@ router.route('/')
   .get(getProperties);
 
 router.route('/:id')
-  .get(getProperty)
   .put(updateProperty)
   .delete(deleteProperty);
 
-// Unit routes
-router.route('/:id/units')
-  .post(addUnit);
+router.route('/:id/rooms/:roomId/remove-tenant')
+  .put(removeTenantFromRoom);
 
-router.route('/:id/units/:unitId')
-  .put(updateUnit)
-  .delete(deleteUnit);
-
-module.exports = router; 
+module.exports = router;

@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../models/property.dart';
+import '../models/property_model.dart';
 import '../providers/property_provider.dart';
 import '../providers/tenant_provider.dart';
 import '../models/tenant_model.dart' as tenantModel;
-import 'add_tenant_screen.dart';
-import 'RoomDetailScreen.dart';
+import 'package:go_router/go_router.dart';
 
 class PropertyDetailsScreen extends StatelessWidget {
   final PropertyModel property;
@@ -85,17 +84,12 @@ class PropertyDetailsScreen extends StatelessWidget {
                                       return;
                                     }
 
-                                    await Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => AddTenantScreen(
-                                          propertyId: updatedProperty.id,
-                                          roomId: room.id,
-                                          floorNumber: floor.floorNumber,
-                                          roomNumber: room.roomNumber,
-                                          excludeTenantIds: assignedTenantIds.toList(),
-                                        ),
-                                      ),
+                                    await context.push(
+                                      '/landlord-home/tenants/add?propertyId=${updatedProperty.id}&roomId=${room.id}&floorNumber=${floor.floorNumber}&roomNumber=${room.roomNumber}',
+                                      extra: {
+                                        'property': updatedProperty,
+                                        'excludeTenantIds': assignedTenantIds.toList(),
+                                      },
                                     );
                                   },
                                   child: const Text("Assign Tenant"),
@@ -112,15 +106,13 @@ class PropertyDetailsScreen extends StatelessWidget {
                                       paymentStatus: '',
                                     ),
                                   );
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => RoomDetailScreen(
-                                        room: room,
-                                        tenant: tenant,
-                                        propertyId: updatedProperty.id,
-                                      ),
-                                    ),
+                                  context.go(
+                                    '/room-detail',
+                                    extra: {
+                                      'room': room,
+                                      'propertyId': updatedProperty.id,
+                                      'tenant': tenant,
+                                    },
                                   );
                                 },
                                 title: Text('${room.roomNumber} (Occupied)'),
@@ -137,6 +129,6 @@ class PropertyDetailsScreen extends StatelessWidget {
           ],
         ),
       ),
-      );
-    }
+    );
   }
+}

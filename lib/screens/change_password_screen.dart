@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import '../services/api.dart';
+import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import '../providers/auth_provider.dart';
 
 class ChangePasswordScreen extends StatefulWidget {
   const ChangePasswordScreen({super.key});
@@ -14,7 +16,6 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   final _newPasswordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   bool _isLoading = false;
-  String? _errorMessage;
   bool _obscureCurrentPassword = true;
   bool _obscureNewPassword = true;
   bool _obscureConfirmPassword = true;
@@ -32,36 +33,26 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
 
     setState(() {
       _isLoading = true;
-      _errorMessage = null;
     });
 
     try {
-      final response = await ApiService.put(
-        '/users/change-password',
-        {
-          'currentPassword': _currentPasswordController.text,
-          'newPassword': _newPasswordController.text,
-        },
-        context: context,
-        headers: {'Content-Type': 'application/json'},
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      await authProvider.changePassword(
+        _currentPasswordController.text,
+        _newPasswordController.text,
       );
-
-      if (response.statusCode == 200) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Password changed successfully')),
-          );
-          Navigator.pop(context);
-        }
-      } else {
-        setState(() {
-          _errorMessage = 'Failed to change password. Please check your current password and try again.';
-        });
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Password changed successfully')),
+        );
+        context.go('/properties');
       }
     } catch (e) {
-      setState(() {
-        _errorMessage = 'Error changing password: $e';
-      });
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString())),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -78,12 +69,13 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
         title: const Text('Change Password'),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(16.0),
         child: Form(
           key: _formKey,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              const SizedBox(height: 20),
               TextFormField(
                 controller: _currentPasswordController,
                 decoration: InputDecoration(
@@ -91,7 +83,9 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                   border: const OutlineInputBorder(),
                   suffixIcon: IconButton(
                     icon: Icon(
-                      _obscureCurrentPassword ? Icons.visibility : Icons.visibility_off,
+                      _obscureCurrentPassword
+                          ? Icons.visibility_off
+                          : Icons.visibility,
                     ),
                     onPressed: () {
                       setState(() {
@@ -116,7 +110,9 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                   border: const OutlineInputBorder(),
                   suffixIcon: IconButton(
                     icon: Icon(
-                      _obscureNewPassword ? Icons.visibility : Icons.visibility_off,
+                      _obscureNewPassword
+                          ? Icons.visibility_off
+                          : Icons.visibility,
                     ),
                     onPressed: () {
                       setState(() {
@@ -130,8 +126,8 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                   if (value == null || value.isEmpty) {
                     return 'Please enter a new password';
                   }
-                  if (value.length < 8) {
-                    return 'Password must be at least 8 characters long';
+                  if (value.length < 6) {
+                    return 'Password must be at least 6 characters';
                   }
                   return null;
                 },
@@ -144,7 +140,9 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                   border: const OutlineInputBorder(),
                   suffixIcon: IconButton(
                     icon: Icon(
-                      _obscureConfirmPassword ? Icons.visibility : Icons.visibility_off,
+                      _obscureConfirmPassword
+                          ? Icons.visibility_off
+                          : Icons.visibility,
                     ),
                     onPressed: () {
                       setState(() {
@@ -165,13 +163,6 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                 },
               ),
               const SizedBox(height: 24),
-              if (_errorMessage != null) ...[
-                Text(
-                  _errorMessage!,
-                  style: const TextStyle(color: Colors.red),
-                ),
-                const SizedBox(height: 16),
-              ],
               ElevatedButton(
                 onPressed: _isLoading ? null : _changePassword,
                 style: ElevatedButton.styleFrom(

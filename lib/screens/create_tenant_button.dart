@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import 'package:kodipay/providers/property_provider.dart';
+import 'package:kodipay/models/property_model.dart';
 
 class CreateTenantButton extends StatelessWidget {
   final String propertyId;
@@ -18,13 +21,25 @@ class CreateTenantButton extends StatelessWidget {
   });
 
   void _navigateToAddTenant(BuildContext context) {
+    final propertyProvider = Provider.of<PropertyProvider>(context, listen: false);
+    final property = propertyProvider.properties.firstWhere(
+      (p) => p.id == propertyId,
+      orElse: () => PropertyModel(
+        id: propertyId,
+        name: 'Property',
+        address: '',
+        rentAmount: 0,
+        totalRooms: 0,
+        floors: [],
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ),
+    );
+    
     context.go(
-      '/landlord-home/properties/add-tenant',
+      '/landlord-home/tenants/add?propertyId=$propertyId&roomId=$roomId&floorNumber=$floorNumber&roomNumber=$roomNumber',
       extra: {
-        'propertyId': propertyId,
-        'roomId': roomId,
-        'floorNumber': floorNumber,
-        'roomNumber': roomNumber,
+        'property': property,
         'excludeTenantIds': excludeTenantIds,
       },
     );

@@ -141,7 +141,7 @@ class _MessagingDashboardScreenState extends State<MessagingDashboardScreen> {
                   lastName: '',
                   status: '',
                   paymentStatus: '',
-                  propertyId: '',
+                  property: null,
                 ),
               );
 

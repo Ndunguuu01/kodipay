@@ -1,67 +1,56 @@
 import 'package:flutter/material.dart';
-import 'package:kodipay/providers/bill_provider.dart';
-import 'package:kodipay/providers/complaint_provider.dart';
-import 'package:kodipay/providers/tenant_provider.dart' as tenant;
 import 'package:provider/provider.dart';
-import 'providers/auth_provider.dart';
-import 'providers/lease_provider.dart';
-import 'providers/payment_provider.dart';
-import 'package:kodipay/services/api.dart';
-import 'package:kodipay/providers/message_provider.dart';
-import 'package:kodipay/providers/property_provider.dart' as prop;
-import 'providers/theme_provider.dart';
+import 'package:go_router/go_router.dart';
 
-import 'router.dart' as app_router;
+import 'package:kodipay/providers/auth_provider.dart';
+import 'package:kodipay/providers/property_provider.dart';
+import 'package:kodipay/providers/complaint_provider.dart';
+import 'package:kodipay/providers/theme_provider.dart';
+import 'package:kodipay/providers/bill_provider.dart';
+import 'package:kodipay/providers/lease_provider.dart';
+import 'package:kodipay/providers/message_provider.dart';
+import 'package:kodipay/providers/tenant_provider.dart';
+
+import 'package:kodipay/router.dart';
+import 'package:kodipay/services/api.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await ApiService.initialize();
 
   final authProvider = AuthProvider();
-  await ApiService.initialize(); 
+  await authProvider.initialize();
+
+  final router = createRouter(authProvider);
 
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider<AuthProvider>.value(value: authProvider),
-        ChangeNotifierProvider(create: (_) => LeaseProvider()),
-        ChangeNotifierProvider(create: (_) => PaymentProvider()),
+        ChangeNotifierProvider.value(value: authProvider),
+        ChangeNotifierProvider(create: (_) => PropertyProvider()),
         ChangeNotifierProvider(create: (_) => ComplaintProvider()),
-        ChangeNotifierProvider(create: (_) => MessageProvider()),
-        ChangeNotifierProvider(create: (_) => prop.PropertyProvider()),
-        ChangeNotifierProvider(create: (_) => BillProvider()),
-        ChangeNotifierProvider(create: (_) => tenant.TenantProvider()),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(create: (_) => BillProvider()),
+        ChangeNotifierProvider(create: (_) => LeaseProvider()),
+        ChangeNotifierProvider(create: (_) => MessageProvider()),
+        ChangeNotifierProvider(create: (_) => TenantProvider()),
       ],
-      child: Builder(
-        builder: (context) {
-          final auth = Provider.of<AuthProvider>(context);
-          final billProvider = Provider.of<BillProvider>(context, listen: false);
-
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (auth.auth != null) {
-              billProvider.setUserId(auth.auth!.id);
-            }
-          });
-
-          return const MyApp();
-        },
-      ),
+      child: MyApp(router: router),
     ),
   );
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final GoRouter router;
+  const MyApp({super.key, required this.router});
 
   @override
   Widget build(BuildContext context) {
-    final themeProvider = Provider.of<ThemeProvider>(context);
-    
     return MaterialApp.router(
-      debugShowCheckedModeBanner: false,
       title: 'KodiPay',
-      theme: themeProvider.theme,
-      routerConfig: app_router.router,
+      debugShowCheckedModeBanner: false,
+      theme: Provider.of<ThemeProvider>(context).theme,
+      routerConfig: router,
     );
   }
 }

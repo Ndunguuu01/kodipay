@@ -5,7 +5,10 @@ class TenantModel {
   final String? lastName;
   final String? status;
   final String? paymentStatus;
-  final String? propertyId;
+  final dynamic property;
+  final String? nationalId;
+  final String? email;
+  final String? unit;
 
   TenantModel({
     required this.id,
@@ -14,26 +17,36 @@ class TenantModel {
     this.lastName,
     this.status,
     this.paymentStatus, 
-    this.propertyId,
+    this.property,
+    this.nationalId,
+    this.email,
+    this.unit,
   });
 
   factory TenantModel.fromJson(Map<String, dynamic> json) {
-    final id = json['_id'];
-    final phoneNumber = json['phoneNumber'];
-
-    if (id == null || phoneNumber == null) {
-      // Log error for missing required fields
-      print('TenantModel.fromJson error: Missing required fields _id or phoneNumber in JSON: \$json');
+    final id = json['_id'] ?? json['id'];
+    // Support both 'phoneNumber' and 'phone'
+    final phoneNumber = json['phoneNumber'] ?? json['phone'];
+    // Support both 'firstName'/'lastName' and 'name'
+    String? firstName = json['firstName'];
+    String? lastName = json['lastName'];
+    if ((firstName == null || firstName.isEmpty) && json['name'] != null) {
+      final nameParts = (json['name'] as String).split(' ');
+      firstName = nameParts.isNotEmpty ? nameParts.first : '';
+      lastName = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
     }
 
     return TenantModel(
       id: id?.toString() ?? 'unknown_id',
       phoneNumber: phoneNumber?.toString() ?? 'unknown_phone',
-      firstName: json['firstName'],
-      lastName: json['lastName'],
+      firstName: firstName,
+      lastName: lastName,
       status: json['status'],
       paymentStatus: json['paymentStatus'],
-      propertyId: json['propertyId'],
+      property: json['property'],
+      nationalId: json['nationalId'],
+      email: json['email'],
+      unit: json['unit']?.toString(),
     );
   }
 
@@ -44,9 +57,11 @@ class TenantModel {
         'lastName': lastName,
         'status': status,
         'paymentStatus': paymentStatus,
+        'property': property,
+        'nationalId': nationalId,
+        'email': email,
+        'unit': unit,
       };
 
   String get fullName => '${firstName ?? ''} ${lastName ?? ''}'.trim();
-
-  get nationalId => null;
 }

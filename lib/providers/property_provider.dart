@@ -1,17 +1,20 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:kodipay/models/property.dart';
+import 'package:kodipay/models/property_model.dart';
 import 'package:kodipay/models/floor_model.dart';
 import 'package:kodipay/services/api.dart';
 import 'package:kodipay/providers/message_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import 'package:kodipay/providers/auth_provider.dart';
 
 class PropertyProvider with ChangeNotifier {
   List<PropertyModel> _properties = [];
   bool _isLoading = false;
   String? _errorMessage;
+  DateTime? _lastFetchTime;
+  static const Duration _cacheDuration = Duration(minutes: 5);
 
   List<PropertyModel> get properties => _properties;
   bool get isLoading => _isLoading;
@@ -19,29 +22,41 @@ class PropertyProvider with ChangeNotifier {
 
   /// Fetch properties for a landlord
   Future<void> fetchProperties(BuildContext context) async {
-    _isLoading = true;
-    _errorMessage = null;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      notifyListeners();
-    });
+    // Check if we have a valid cache
+    if (_lastFetchTime != null && 
+        DateTime.now().difference(_lastFetchTime!) < _cacheDuration &&
+        _properties.isNotEmpty) {
+      return; // Use cached data
+    }
 
     try {
-      final response = await ApiService.get(
-        '/properties/landlord',
-        context: context,
-      );
+      _isLoading = true;
+      _errorMessage = null;
+      notifyListeners();
 
-      print('Fetch properties API Response: ${response.statusCode} - ${response.body}');
+      // Ensure we have a valid token before making the request
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      if (authProvider.auth?.token == null) {
+        _errorMessage = 'Authentication required. Please log in again.';
+        if (context.mounted) {
+          context.go('/login');
+        }
+        return;
+      }
 
+      final response = await ApiService.get('/properties', context: context);
+      
       if (response.statusCode == 200) {
-        final List<dynamic> propertiesJson = jsonDecode(response.body);
-        _properties = propertiesJson.map((json) => PropertyModel.fromJson(json)).toList();
+        final List<dynamic> data = json.decode(response.body);
+        _properties = data.map((json) => PropertyModel.fromJson(json)).toList();
+        _lastFetchTime = DateTime.now();
+        _errorMessage = null;
 
         // Calculate occupiedRooms dynamically for each property
         _properties = _properties.map((property) {
           int occupiedCount = 0;
           for (var floor in property.floors) {
-            occupiedCount += floor.rooms.where((room) => room.isOccupied).length;
+            occupiedCount += floor.rooms.where((room) => room.isOccupied || room.tenantId != null).length;
           }
           return PropertyModel(
             id: property.id,
@@ -51,15 +66,14 @@ class PropertyProvider with ChangeNotifier {
             totalRooms: property.totalRooms,
             occupiedRooms: occupiedCount,
             floors: property.floors,
-            description: property.description,
-            landlordId: property.landlordId,
-            imageUrl: property.imageUrl,
             createdAt: property.createdAt,
             updatedAt: property.updatedAt,
           );
         }).toList();
       } else if (response.statusCode == 401) {
         _errorMessage = 'Session expired. Please log in again.';
+        // Clear the auth state and redirect to login
+        authProvider.logout();
         if (context.mounted) {
           context.go('/login');
         }
@@ -69,15 +83,15 @@ class PropertyProvider with ChangeNotifier {
     } catch (e) {
       _errorMessage = 'Error fetching properties: ${e.toString()}';
       print('Error details: $e');
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        notifyListeners();
-      });
     } finally {
       _isLoading = false;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        notifyListeners();
-      });
+      notifyListeners();
     }
+  }
+
+  Future<void> refreshProperties(BuildContext context) async {
+    _lastFetchTime = null; // Clear cache
+    await fetchProperties(context);
   }
 
   /// Add a new property
@@ -85,21 +99,17 @@ class PropertyProvider with ChangeNotifier {
     required String name,
     required String address,
     required double rentAmount,
-    String? description,
     required List<FloorModel> floors,
   }) async {
     _isLoading = true;
     _errorMessage = null;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      notifyListeners();
-    });
+    notifyListeners();
 
     try {
       final propertyData = {
         'name': name,
         'address': address,
         'rentAmount': rentAmount,
-        'description': description,
         'floors': floors.map((floor) => floor.toJson()).toList(),
       };
 
@@ -117,20 +127,14 @@ class PropertyProvider with ChangeNotifier {
       } else {
         _errorMessage = 'Failed to add property: ${response.statusCode} - ${response.body}';
       }
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        notifyListeners();
-      });
+      notifyListeners();
     } catch (e) {
       _errorMessage = 'Error adding property: ${e.toString()}';
       print('Error details: $e');
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        notifyListeners();
-      });
+      notifyListeners();
     } finally {
       _isLoading = false;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        notifyListeners();
-      });
+      notifyListeners();
     }
   }
 
@@ -145,9 +149,7 @@ class PropertyProvider with ChangeNotifier {
   }) async {
     _isLoading = true;
     _errorMessage = null;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      notifyListeners();
-    });
+    notifyListeners();
 
     try {
       final payload = {
@@ -159,10 +161,15 @@ class PropertyProvider with ChangeNotifier {
 
       print('Assigning tenant with payload: $payload, roomId: ${roomId ?? "not provided"}');
 
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('auth_token');
+      if (token == null) {
+        throw Exception('No authentication token found');
+      }
+      await ApiService.setAuthToken(token);
       final response = await ApiService.put(
-        '/properties/$propertyId/assign-tenant',
+        '/properties/$propertyId/rooms/${roomId ?? ""}/assign-tenant',
         payload,
-        context: null,
       );
 
       print('Assign tenant response: ${response.statusCode} - ${response.body}');
@@ -187,29 +194,21 @@ class PropertyProvider with ChangeNotifier {
       } else {
         _errorMessage = 'Failed to assign tenant: ${response.statusCode} - ${response.body}';
       }
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        notifyListeners();
-      });
+      notifyListeners();
     } catch (e) {
       _errorMessage = 'Error assigning tenant: ${e.toString()}';
       print('Error details: $e');
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        notifyListeners();
-      });
+      notifyListeners();
     } finally {
       _isLoading = false;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        notifyListeners();
-      });
+      notifyListeners();
     }
   }
 
   /// Delete a property
   Future<void> deleteProperty(String propertyId, BuildContext context) async {
     _isLoading = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      notifyListeners();
-    });
+    notifyListeners();
 
     try {
       final response = await ApiService.delete(
@@ -233,26 +232,19 @@ class PropertyProvider with ChangeNotifier {
           SnackBar(content: Text('Failed to delete property: ${response.body}')),
         );
       }
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        notifyListeners();
-      });
+      notifyListeners();
     } catch (e) {
       _errorMessage = 'Error deleting property: ${e.toString()}';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: $e')),
       );
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        notifyListeners();
-      });
+      notifyListeners();
     } finally {
       _isLoading = false;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        notifyListeners();
-      });
+      notifyListeners();
     }
   }
 
-  /// Notify tenant about assignment
   Future<void> _notifyAssignedTenant({
     required PropertyModel property,
     required int floorNumber,
@@ -261,19 +253,14 @@ class PropertyProvider with ChangeNotifier {
     required MessageProvider messageProvider,
   }) async {
     try {
-      if (property.landlordId == null) {
-        print('Warning: landlordId is null for property ${property.id}');
-        return;
-      }
-
-      final message = 'You have been assigned to room $roomNumber on floor $floorNumber in ${property.name} at ${property.address}. Rent: KES ${property.rentAmount}.';
-      await messageProvider.sendDirectMessage(
-        senderId: property.landlordId!,
-        recipientId: tenantId,
-        content: message,
+      final messageContent = 'You have been assigned to Room $roomNumber on Floor $floorNumber in ${property.name}';
+      
+      await messageProvider.sendMessage(
+        messageContent,
+        tenantId,
       );
     } catch (e) {
-      print('Error notifying tenant: $e');
+      print('Error sending tenant assignment notification: $e');
     }
   }
 
@@ -281,9 +268,7 @@ class PropertyProvider with ChangeNotifier {
   void clearProperties() {
     _properties = [];
     _errorMessage = null;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      notifyListeners();
-    });
+    notifyListeners();
   }
 
   /// Get property by ID
@@ -293,5 +278,68 @@ class PropertyProvider with ChangeNotifier {
     } catch (_) {
       return null;
     }
+  }
+
+  /// Remove tenant from a room
+  Future<void> removeTenantFromRoom({
+    required String propertyId,
+    required String roomId,
+    required MessageProvider messageProvider,
+  }) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('auth_token');
+      if (token == null) {
+        throw Exception('No authentication token found');
+      }
+      await ApiService.setAuthToken(token);
+      
+      final response = await ApiService.put(
+        '/properties/$propertyId/rooms/$roomId/remove-tenant',
+        {},
+      );
+
+      print('Remove tenant response: ${response.statusCode} - ${response.body}');
+
+      if (response.statusCode == 200) {
+        final responseData = jsonDecode(response.body);
+        final updatedProperty = PropertyModel.fromJson(responseData['property']);
+        final index = _properties.indexWhere((p) => p.id == propertyId);
+        if (index != -1) _properties[index] = updatedProperty;
+
+        // Notify the tenant about removal
+        final room = updatedProperty.floors
+            .expand((floor) => floor.rooms)
+            .firstWhere((room) => room.id == roomId);
+        
+        if (room.tenantId != null) {
+          await messageProvider.sendMessage(
+            'You have been removed from Room ${room.roomNumber} in ${updatedProperty.name}',
+            room.tenantId!,
+          );
+        }
+      } else if (response.statusCode == 401) {
+        _errorMessage = 'Session expired. Please log in again.';
+      } else {
+        _errorMessage = 'Failed to remove tenant: ${response.statusCode} - ${response.body}';
+      }
+      notifyListeners();
+    } catch (e) {
+      _errorMessage = 'Error removing tenant: ${e.toString()}';
+      print('Error details: $e');
+      notifyListeners();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  void clearError() {
+    _errorMessage = null;
+    notifyListeners();
   }
 }

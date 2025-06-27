@@ -5,6 +5,35 @@ import 'package:kodipay/services/api.dart';
 import 'package:kodipay/providers/auth_provider.dart';
 import 'package:provider/provider.dart';
 
+class Bill {
+  final String id;
+  final double amount;
+  final DateTime date;
+  final String description;
+  final String status;
+  final String tenantId;
+
+  Bill({
+    required this.id,
+    required this.amount,
+    required this.date,
+    required this.description,
+    required this.status,
+    required this.tenantId,
+  });
+
+  factory Bill.fromJson(Map<String, dynamic> json) {
+    return Bill(
+      id: json['_id'],
+      amount: (json['amount'] as num).toDouble(),
+      date: DateTime.parse(json['date']),
+      description: json['description'],
+      status: json['status'],
+      tenantId: json['tenantId'],
+    );
+  }
+}
+
 class BillProvider with ChangeNotifier {
   String? _userId;
   List<BillModel> _bills = [];
@@ -38,15 +67,8 @@ class BillProvider with ChangeNotifier {
         throw Exception('Authentication token not found');
       }
 
-      // print('Fetching bills for tenant: $tenantId with token: ${token.substring(0, 10)}...'); // Debug log
-
-      final response = await ApiService.get(
-        '/bills/tenant/$tenantId',
-        headers: {'Authorization': 'Bearer $token'},
-        context: context,
-      );
-
-      // print('Tenant Bills API Response: ${response.statusCode} - ${response.body}'); // Debug log
+      await ApiService.setAuthToken(token);
+      final response = await ApiService.get('/bills/tenant/$tenantId', context: context);
 
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
@@ -55,11 +77,9 @@ class BillProvider with ChangeNotifier {
       } else {
         final errorMessage = json.decode(response.body)['message'] ?? 'Unknown error';
         _error = 'Failed to fetch tenant bills: $errorMessage';
-        // print('Error fetching tenant bills: $_error'); // Debug log
         return [];
       }
     } catch (e) {
-      // print('Error fetching tenant bills: $e'); // Debug log
       _error = 'Error fetching tenant bills: $e';
       return [];
     } finally {
@@ -75,7 +95,11 @@ class BillProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      final response = await ApiService.post('/bills', bill.toJson(), context: context);
+      final response = await ApiService.post(
+        '/bills',
+        bill.toJson(),
+        context: context,
+      );
 
       if (response.statusCode == 201) {
         final newBill = BillModel.fromJson(json.decode(response.body));
@@ -92,9 +116,6 @@ class BillProvider with ChangeNotifier {
       notifyListeners();
     }
   }
-
-  // Alias method for compatibility with UI
-  Future<void> createBill(BillModel bill, BuildContext? context) => addBill(bill, context);
 
   // Create property-wide bills
   Future<void> createPropertyBills({
@@ -116,7 +137,7 @@ class BillProvider with ChangeNotifier {
           'amount': amount,
           'dueDate': dueDate.toIso8601String(),
           'landlordId': _userId,
-          'tenantId': '', // tenantId is required by backend, but for property-wide bills, it may be ignored or handled differently
+          'tenantId': '',
         },
         context: context,
       );
@@ -148,15 +169,8 @@ class BillProvider with ChangeNotifier {
         throw Exception('Authentication token not found');
       }
 
-      // print('Fetching all bills with token: ${token.substring(0, 10)}...'); // Debug log
-
-      final response = await ApiService.get(
-        '/bills', // Changed endpoint to match BillService
-        headers: {'Authorization': 'Bearer $token'},
-        context: context,
-      );
-
-      // print('All Bills API Response: ${response.statusCode} - ${response.body}'); // Debug log
+      await ApiService.setAuthToken(token);
+      final response = await ApiService.get('/bills', context: context);
 
       if (response.statusCode == 200) {
         final List<dynamic> billsJson = json.decode(response.body);
@@ -165,11 +179,9 @@ class BillProvider with ChangeNotifier {
       } else {
         final errorMessage = json.decode(response.body)['message'] ?? 'Unknown error';
         _error = 'Failed to fetch bills: $errorMessage';
-        // print('Error fetching bills: $_error'); // Debug log
         return [];
       }
     } catch (e) {
-      // print('Error fetching all bills: $e'); // Debug log
       _error = 'Error fetching bills: $e';
       return [];
     } finally {
@@ -209,11 +221,8 @@ class BillProvider with ChangeNotifier {
           .map((e) => '${e.key}=${Uri.encodeComponent(e.value)}')
           .join('&');
 
-      final response = await ApiService.get(
-        '/bills/filter?$queryString',
-        headers: {'Authorization': 'Bearer $token'},
-        context: context,
-      );
+      await ApiService.setAuthToken(token);
+      final response = await ApiService.get('/bills/filter?$queryString', context: context);
 
       if (response.statusCode == 200) {
         final List<dynamic> billsJson = json.decode(response.body);
@@ -247,11 +256,8 @@ class BillProvider with ChangeNotifier {
         throw Exception('Authentication token not found');
       }
 
-      final response = await ApiService.get(
-        '/bills/statistics',
-        headers: {'Authorization': 'Bearer $token'},
-        context: context,
-      );
+      await ApiService.setAuthToken(token);
+      final response = await ApiService.get('/bills/statistics', context: context);
 
       if (response.statusCode == 200) {
         return json.decode(response.body);
@@ -350,6 +356,87 @@ class BillProvider with ChangeNotifier {
     } catch (e) {
       _error = 'Error updating bill: $e';
       throw Exception(_error);
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  // Create a new bill
+  Future<bool> createNewBill({
+    required String tenantId,
+    required double amount,
+    required String description,
+    required String token,
+  }) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      await ApiService.setAuthToken(token);
+      final response = await ApiService.post(
+        '/bills',
+        {
+          'tenantId': tenantId,
+          'amount': amount,
+          'description': description,
+          'date': DateTime.now().toIso8601String(),
+          'status': 'pending',
+        },
+      );
+
+      if (response.statusCode == 201) {
+        final bill = BillModel.fromJson(jsonDecode(response.body));
+        _bills.add(bill);
+        notifyListeners();
+        return true;
+      } else {
+        _error = 'Failed to create bill: ${response.statusCode}';
+        return false;
+      }
+    } catch (e) {
+      _error = 'Error creating bill: $e';
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> updateBillStatus({
+    required String billId,
+    required String status,
+    required String token,
+  }) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      await ApiService.setAuthToken(token);
+      final response = await ApiService.put(
+        '/bills/$billId/status',
+        {
+          'status': status,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final updatedBill = BillModel.fromJson(jsonDecode(response.body));
+        final index = _bills.indexWhere((b) => b.id == billId);
+        if (index != -1) {
+          _bills[index] = updatedBill;
+          notifyListeners();
+        }
+        return true;
+      } else {
+        _error = 'Failed to update bill status: ${response.statusCode}';
+        return false;
+      }
+    } catch (e) {
+      _error = 'Error updating bill status: $e';
+      return false;
     } finally {
       _isLoading = false;
       notifyListeners();

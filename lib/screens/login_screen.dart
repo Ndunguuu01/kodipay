@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/auth_provider.dart';
+import 'package:kodipay/services/biometric_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -18,11 +19,14 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _obscurePassword = true;
   DateTime? _lastLoginAttempt;
   bool _isLoading = false;
+  bool _isBiometricAvailable = false;
+  final _biometricService = BiometricService();
 
   @override
   void initState() {
     super.initState();
     _loadSavedCredentials();
+    _checkBiometrics();
   }
 
   @override
@@ -41,91 +45,181 @@ class _LoginScreenState extends State<LoginScreen> {
     });
   }
 
+  Future<void> _checkBiometrics() async {
+    try {
+      final isAvailable = await _biometricService.isBiometricsAvailable();
+      if (mounted) {
+        setState(() {
+          _isBiometricAvailable = isAvailable;
+        });
+      }
+    } catch (e) {
+      // Handle biometric authentication not available
+      if (mounted) {
+        setState(() {
+          _isBiometricAvailable = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _authenticateWithBiometrics() async {
+    if (!_isBiometricAvailable) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Biometric authentication is not available on this device.')),
+        );
+      }
+      return;
+    }
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedPhone = prefs.getString('last_login_phone');
+      final savedPassword = prefs.getString('last_login_password');
+
+      if (savedPhone == null || savedPassword == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No saved credentials found. Please login manually first.')),
+          );
+        }
+        return;
+      }
+
+      final isAuthenticated = await _biometricService.authenticate();
+      if (isAuthenticated && mounted) {
+        setState(() {
+          _phoneNumberController.text = savedPhone;
+          _passwordController.text = savedPassword;
+        });
+        _login();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Biometric authentication failed. Please login manually.')),
+        );
+      }
+    }
+  }
+
   Future<void> _login() async {
-    final phone = _phoneNumberController.text.trim();
-    final password = _passwordController.text;
+    if (!_formKey.currentState!.validate()) return;
 
-    if (phone.isEmpty || password.isEmpty) {
-      if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-      });
-      context.read<AuthProvider>().errorMessage = 'Please enter both phone number and password.';
-      return;
-    }
-
-    if (_lastLoginAttempt != null &&
-        DateTime.now().difference(_lastLoginAttempt!).inSeconds < 2) {
-      return;
-    }
-
-    _lastLoginAttempt = DateTime.now();
-    if (!mounted) return;
     setState(() {
       _isLoading = true;
     });
 
     try {
-      await context.read<AuthProvider>().login(phone, password, context);
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final phoneNumber = _phoneNumberController.text.trim();
+      final password = _passwordController.text;
+
+      if (phoneNumber.isEmpty || password.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Please enter both phone number and password'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      await authProvider.login(
+        phoneNumber,
+        password,
+      );
+      
+      // Save credentials for auto-fill
+      if (mounted) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('phoneNumber', phoneNumber);
+        await prefs.setString('password', password);
+        await prefs.setString('last_login_phone', phoneNumber);
+        await prefs.setString('last_login_password', password);
+      }
+      
+      if (context.mounted) {
+        final role = authProvider.auth?.role;
+        if (role == 'landlord') {
+          context.go('/landlord-home');
+        } else {
+          context.go('/tenant-home');
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString())),
+        );
+      }
     } finally {
-      if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final authProvider = Provider.of<AuthProvider>(context);
     return Scaffold(
-      body: Consumer<AuthProvider>(
-        builder: (context, authProvider, child) {
-          return Column(
-            children: [
-              // Top header with logo and title
-              Container(
-                height: MediaQuery.of(context).size.height * 0.5,
-                decoration: const BoxDecoration(
-                  color: Color(0xFF90CAF9),
-                  borderRadius: BorderRadius.only(
-                    bottomLeft: Radius.circular(50),
-                    bottomRight: Radius.circular(50),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Top header with logo and title
+                Container(
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF90CAF9),
+                    borderRadius: BorderRadius.only(
+                      bottomLeft: Radius.circular(50),
+                      bottomRight: Radius.circular(50),
+                    ),
                   ),
-                ),
-                child: Column(
-                  children: [
-                    Container(
-                      height: MediaQuery.of(context).size.height * 0.35,
-                      decoration: const BoxDecoration(
-                        image: DecorationImage(
-                          image: AssetImage('lib/assets/images/logo.webp'),
-                          fit: BoxFit.cover,
+                  child: Column(
+                    children: [
+                      Container(
+                        height: 180,
+                        decoration: const BoxDecoration(
+                          image: DecorationImage(
+                            image: AssetImage('lib/assets/images/logo.webp'),
+                            fit: BoxFit.cover,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 24),
-                    const Text(
-                      'KodiPay',
-                      style: TextStyle(
-                        fontSize: 50,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                      const SizedBox(height: 24),
+                      const Text(
+                        'KodiPay',
+                        style: TextStyle(
+                          fontSize: 50,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              // Login form
-              Expanded(
-                child: SafeArea(
-                  child: SingleChildScrollView(
-                    padding: EdgeInsets.only(
-                      left: 20,
-                      right: 20,
-                      bottom: MediaQuery.of(context).viewInsets.bottom,
-                      top: 20,
-                    ),
+                // Login form
+                Padding(
+                  padding: EdgeInsets.only(
+                    left: 20,
+                    right: 20,
+                    bottom: MediaQuery.of(context).viewInsets.bottom,
+                    top: 20,
+                  ),
+                  child: Form(
+                    key: _formKey,
                     child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Container(
                           padding: const EdgeInsets.all(20),
@@ -145,11 +239,17 @@ class _LoginScreenState extends State<LoginScreen> {
                             children: [
                               const Text('Phone Number', style: TextStyle(color: Colors.black54)),
                               const SizedBox(height: 8),
-                              TextField(
+                              TextFormField(
                                 controller: _phoneNumberController,
                                 keyboardType: TextInputType.phone,
                                 textInputAction: TextInputAction.next,
-                                onSubmitted: (_) => FocusScope.of(context).nextFocus(),
+                                onFieldSubmitted: (_) => FocusScope.of(context).nextFocus(),
+                                validator: (value) {
+                                  if (value == null || value.isEmpty) {
+                                    return 'Please enter your phone number';
+                                  }
+                                  return null;
+                                },
                                 decoration: InputDecoration(
                                   filled: true,
                                   fillColor: Colors.grey[200],
@@ -162,9 +262,15 @@ class _LoginScreenState extends State<LoginScreen> {
                               const SizedBox(height: 16),
                               const Text('Password', style: TextStyle(color: Colors.black54)),
                               const SizedBox(height: 8),
-                              TextField(
+                              TextFormField(
                                 controller: _passwordController,
                                 obscureText: _obscurePassword,
+                                validator: (value) {
+                                  if (value == null || value.isEmpty) {
+                                    return 'Please enter your password';
+                                  }
+                                  return null;
+                                },
                                 decoration: InputDecoration(
                                   filled: true,
                                   fillColor: Colors.grey[200],
@@ -190,6 +296,14 @@ class _LoginScreenState extends State<LoginScreen> {
                                     style: const TextStyle(color: Colors.red)),
                               ],
                               const SizedBox(height: 20),
+                              if (_isBiometricAvailable)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 16.0),
+                                  child: IconButton(
+                                    icon: const Icon(Icons.fingerprint, size: 48),
+                                    onPressed: _authenticateWithBiometrics,
+                                  ),
+                                ),
                               SizedBox(
                                 width: double.infinity,
                                 child: ElevatedButton(
@@ -227,10 +341,10 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                 ),
-              ),
-            ],
-          );
-        },
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
