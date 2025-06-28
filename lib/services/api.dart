@@ -32,8 +32,8 @@ class ApiService {
   static DateTime? get lastConnectionCheck => _lastConnectionCheck;
 
   static String get baseUrl {
-    // Use local backend address
-    return 'http://192.168.100.71:5000/api';
+    // TODO: Update this URL after deploying backend to Render
+    return const String.fromEnvironment('API_BASE_URL', defaultValue: 'https://your-backend.onrender.com/api');
   }
 
   /// Initialize the service
