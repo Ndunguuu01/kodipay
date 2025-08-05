@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:kodipay/providers/property_provider.dart';
 import 'package:kodipay/models/property_model.dart';
+import 'package:kodipay/providers/auth_provider.dart';
 
 class PropertyListScreen extends StatefulWidget {
   const PropertyListScreen({super.key});
@@ -17,7 +18,10 @@ class _PropertyListScreenState extends State<PropertyListScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final propertyProvider = Provider.of<PropertyProvider>(context, listen: false);
-      propertyProvider.fetchProperties(context);
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      if (authProvider.auth?.token != null) {
+        propertyProvider.fetchProperties(context);
+      }
     });
   }
 
@@ -63,7 +67,12 @@ class _PropertyListScreenState extends State<PropertyListScreen> {
             actions: [
               IconButton(
                 icon: const Icon(Icons.add),
-                onPressed: () => context.go('/landlord-home/properties/add'),
+                onPressed: () async {
+                  final result = await context.push('/landlord-home/properties/add');
+                  if (result is Map && result['refresh'] == true) {
+                    await Provider.of<PropertyProvider>(context, listen: false).refreshProperties(context);
+                  }
+                },
                 tooltip: 'Add Property',
               ),
             ],

@@ -54,20 +54,22 @@ class _AddTenantScreenState extends State<AddTenantScreen> {
 
     try {
       final tenantProvider = Provider.of<TenantProvider>(context, listen: false);
-      final result = await tenantProvider.createTenant(
+      final success = await tenantProvider.createAndAssignTenant(
+        propertyId: widget.propertyId,
         firstName: _firstNameController.text.trim(),
         lastName: _lastNameController.text.trim(),
-        phoneNumber: _phoneController.text.trim(),
-        email: _emailController.text.trim(),
+        phone: _phoneController.text.trim(),
         nationalId: _nationalIdController.text.trim(),
-        propertyId: widget.propertyId,
+        email: _emailController.text.trim(),
+        floorNumber: widget.floorNumber,
+        roomNumber: widget.roomNumber,
         roomId: widget.roomId,
         context: context,
       );
 
-      if (result != null) {
+      if (success) {
         if (mounted) {
-          context.pop({'tenant': result.toJson()});
+          context.pop({'tenant': null});
         }
       } else {
         if (mounted) {
@@ -199,8 +201,8 @@ class _AddTenantScreenState extends State<AddTenantScreen> {
                       keyboardType: TextInputType.phone,
                       validator: (value) {
                         if (value == null || value.isEmpty) return 'Required';
-                        if (!RegExp(r'^\+2547\d{8}$').hasMatch(value)) {
-                          return 'Must be in format: +2547XXXXXXXX';
+                        if (!RegExp(r'^\+?[0-9]{10,15}$').hasMatch(value)) {
+                          return 'Must be a valid phone number, e.g. +254703969986';
                         }
                         return null;
                       },
@@ -222,15 +224,9 @@ class _AddTenantScreenState extends State<AddTenantScreen> {
                     const SizedBox(height: 16),
                     _buildTextField(
                       controller: _nationalIdController,
-                      label: 'National ID (Optional)',
+                      label: 'National ID',
                       icon: Icons.badge,
-                      validator: (value) {
-                        if (value == null || value.isEmpty) return null;
-                        if (value.length < 5) {
-                          return 'Must be at least 5 characters';
-                        }
-                        return null;
-                      },
+                      validator: (value) => value == null || value.isEmpty ? 'National ID is required' : null,
                     ),
                     const SizedBox(height: 24),
                     // Submit Button
@@ -310,6 +306,8 @@ class _AddTenantScreenState extends State<AddTenantScreen> {
       ),
       keyboardType: keyboardType,
       validator: validator,
+      // Add the name property for accessibility
+      autofillHints: [label],
     );
   }
 }

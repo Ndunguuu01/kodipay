@@ -95,9 +95,16 @@ class BillProvider with ChangeNotifier {
     notifyListeners();
 
     try {
+      // Prepare the bill data with required fields for backend validation
+      final billData = {
+        ...bill.toJson(),
+        'property': bill.propertyId,
+        'unit': bill.roomId,
+      };
+
       final response = await ApiService.post(
         '/bills',
-        bill.toJson(),
+        billData,
         context: context,
       );
 
@@ -105,7 +112,8 @@ class BillProvider with ChangeNotifier {
         final newBill = BillModel.fromJson(json.decode(response.body));
         _bills.add(newBill);
       } else {
-        _error = 'Failed to create bill: ${response.statusCode}';
+        final errorBody = json.decode(response.body);
+        _error = 'Failed to create bill: ${errorBody['message'] ?? response.statusCode}';
         throw Exception(_error);
       }
     } catch (e) {

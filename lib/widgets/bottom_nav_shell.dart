@@ -13,7 +13,7 @@ class BottomNavShell extends StatefulWidget {
 class _BottomNavShellState extends State<BottomNavShell> {
   static const List<String> _routePaths = [
     '/landlord-home',
-    '/landlord-home/tenants',
+    '/landlord-home/properties',
     '/landlord-home/messages',
     '/landlord-home/complaints',
     '/landlord-home/profile',
@@ -65,8 +65,8 @@ class _BottomNavShellState extends State<BottomNavShell> {
             label: 'Dashboard',
           ),
           NavigationDestination(
-            icon: Icon(Icons.people, color: selectedIndex == 1 ? Colors.black : Colors.grey),
-            label: 'Tenants',
+            icon: Icon(Icons.business, color: selectedIndex == 1 ? Colors.black : Colors.grey),
+            label: 'Properties',
           ),
           NavigationDestination(
             icon: Icon(Icons.message, color: selectedIndex == 2 ? Colors.black : Colors.grey),

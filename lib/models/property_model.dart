@@ -25,17 +25,15 @@ class PropertyModel {
 
   factory PropertyModel.fromJson(Map<String, dynamic> json) {
     return PropertyModel(
-      id: json['_id'],
-      name: json['name'],
+      id: json['_id'] ?? '',
+      name: json['name'] ?? '',
       address: json['address'] ?? '',
       rentAmount: (json['rentAmount'] ?? 0).toDouble(),
       totalRooms: json['totalRooms'] ?? 0,
       occupiedRooms: json['occupiedRooms'],
-      floors: (json['floors'] as List)
-          .map((floor) => FloorModel.fromJson(floor))
-          .toList(),
-      createdAt: DateTime.parse(json['createdAt']),
-      updatedAt: DateTime.parse(json['updatedAt']),
+      floors: (json['floors'] as List? ?? []).map((floor) => FloorModel.fromJson(floor)).toList(),
+      createdAt: json['createdAt'] != null ? DateTime.parse(json['createdAt']) : DateTime.now(),
+      updatedAt: json['updatedAt'] != null ? DateTime.parse(json['updatedAt']) : DateTime.now(),
     );
   }
 

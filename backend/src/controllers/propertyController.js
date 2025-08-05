@@ -206,6 +206,54 @@ const removeTenantFromRoom = async (req, res) => {
   }
 };
 
+const assignTenantToRoom = async (req, res) => {
+  try {
+    const { tenantId, roomId } = req.body;
+    const propertyId = req.params.id;
+
+    if (!tenantId || !roomId) {
+      return res.status(400).json({ message: 'tenantId and roomId are required' });
+    }
+
+    const property = await Property.findById(propertyId);
+    if (!property) {
+      return res.status(404).json({ message: 'Property not found' });
+    }
+
+    // Check if user is landlord
+    if (property.landlordId.toString() !== req.user._id.toString()) {
+      return res.status(401).json({ message: 'Not authorized' });
+    }
+
+    // Find the room in the floors
+    let found = false;
+    for (let floor of property.floors) {
+      for (let room of floor.rooms) {
+        if (room._id.toString() === roomId) {
+          if (room.isOccupied) {
+            return res.status(400).json({ message: 'Room is already occupied' });
+          }
+          room.tenantId = tenantId;
+          room.isOccupied = true;
+          found = true;
+          break;
+        }
+      }
+      if (found) break;
+    }
+
+    if (!found) {
+      return res.status(404).json({ message: 'Room not found' });
+    }
+
+    await property.save();
+    res.json({ message: 'Tenant assigned to room', property });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 module.exports = {
   createProperty,
   getProperties,
@@ -215,4 +263,5 @@ module.exports = {
   updateUnit,
   deleteUnit,
   removeTenantFromRoom,
+  assignTenantToRoom,
 };

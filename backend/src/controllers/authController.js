@@ -37,16 +37,24 @@ const registerUser = async (req, res) => {
       body: { ...req.body, password: '[REDACTED]' },
       headers: req.headers
     });
+    console.log('DEBUG: Full req.body:', req.body);
 
     // Accept phoneNumber as alias for phone
-    let { name, email, phone, phoneNumber, password, role = 'user' } = req.body;
+    let { name, phone, phoneNumber, password, role, nationalId } = req.body;
     phone = phone || phoneNumber;
 
-    // Validate required fields including email
-    if (!name || !email || !phone || !password) {
+    // Force role to 'landlord' if not provided or invalid
+    const allowedRoles = ['user', 'admin', 'landlord', 'tenant'];
+    if (!role || !allowedRoles.includes(role)) {
+      console.log('DEBUG: Forcing role to landlord');
+      role = 'landlord';
+    }
+
+    // Validate required fields (remove email, add nationalId)
+    if (!name || !phone || !password || !nationalId) {
       return res.status(400).json({
         message: 'Missing required fields',
-        required: ['name', 'email', 'phone', 'password']
+        required: ['name', 'phone', 'password', 'nationalId']
       });
     }
 
@@ -57,36 +65,37 @@ const registerUser = async (req, res) => {
       });
     }
 
-    // Check if user exists by email or phone
+    // Check if user exists by phone or nationalId
     const userExists = await User.findOne({
-      $or: [{ email }, { phone }]
+      $or: [{ phone }, { nationalId }]
     });
 
     if (userExists) {
-      if (userExists.email === email) {
-        return res.status(400).json({ message: 'Email already exists' });
-      }
       if (userExists.phone === phone) {
         return res.status(400).json({ message: 'Phone number already exists' });
+      }
+      if (userExists.nationalId === nationalId) {
+        return res.status(400).json({ message: 'National ID already exists' });
       }
     }
 
     console.log('Creating new user with data:', {
       name,
-      email,
       phone,
       role,
+      nationalId,
       passwordLength: password.length
     });
 
     // Create user
-    const user = await User.create({
+    const userData = {
       name,
-      email,
       phone,
       password,
       role,
-    });
+      nationalId,
+    };
+    const user = await User.create(userData);
 
     console.log('User created successfully:', {
       id: user._id,
@@ -98,7 +107,6 @@ const registerUser = async (req, res) => {
       const response = {
         _id: user._id,
         name: user.name,
-        email: user.email,
         phone: user.phone,
         role: user.role,
         token: generateToken(user._id),
@@ -125,11 +133,11 @@ const registerUser = async (req, res) => {
     }
     
     if (error.code === 11000) {
-      if (error.keyPattern.email) {
-        return res.status(400).json({ message: 'Email already exists' });
-      }
       if (error.keyPattern.phone) {
         return res.status(400).json({ message: 'Phone number already exists' });
+      }
+      if (error.keyPattern.nationalId) {
+        return res.status(400).json({ message: 'National ID already exists' });
       }
     }
 
@@ -157,26 +165,19 @@ const loginUser = async (req, res) => {
       headers: req.headers
     });
 
-    const { email, phone, password } = req.body;
+    const { phone, password } = req.body;
 
-    // Check if either email or phone is provided
-    if (!email && !phone) {
-      return res.status(400).json({ message: 'Please provide either email or phone number' });
+    if (!phone) {
+      return res.status(400).json({ message: 'Please provide phone number' });
     }
 
     if (!password) {
       return res.status(400).json({ message: 'Password is required' });
     }
 
-    // Find user by email or phone
+    // Find user by phone
     let user;
-    if (email) {
-      console.log('Attempting to find user by email:', email);
-      user = await User.findOne({ email }).select('+password');
-    } else {
-      console.log('Attempting to find user by phone:', phone);
-      user = await User.findOne({ phone }).select('+password');
-    }
+    user = await User.findOne({ phone }).select('+password');
 
     if (!user) {
       console.log('User not found');
@@ -202,7 +203,6 @@ const loginUser = async (req, res) => {
     const response = {
       _id: user._id,
       name: user.name,
-      email: user.email,
       phone: user.phone,
       role: user.role,
       token: generateToken(user._id),
@@ -210,9 +210,8 @@ const loginUser = async (req, res) => {
     };
 
     // Save the generated refresh token to the user document
-    user.refreshToken = response.refreshToken;
-    await user.save();
-    console.log(`Backend: Saved refresh token for user ${user._id} during login: ${user.refreshToken}`);
+    await User.findByIdAndUpdate(user._id, { refreshToken: response.refreshToken });
+    console.log(`Backend: Saved refresh token for user ${user._id} during login: ${response.refreshToken}`);
 
     console.log('Sending login response:', {
       ...response,
@@ -323,8 +322,24 @@ const refreshToken = async (req, res) => {
   }
 };
 
+// @desc    Get current authenticated user
+// @route   GET /api/auth/me
+// @access  Private
+const getCurrentUser = async (req, res) => {
+  if (!req.user) {
+    return res.status(401).json({ message: 'Not authenticated' });
+  }
+  res.json({
+    _id: req.user._id,
+    name: req.user.name,
+    phone: req.user.phone,
+    role: req.user.role,
+  });
+};
+
 module.exports = {
   registerUser,
   loginUser,
   refreshToken,
-}; 
+  getCurrentUser,
+};

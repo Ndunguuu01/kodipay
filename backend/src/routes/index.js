@@ -10,6 +10,7 @@ const paymentRoutes = require('./paymentRoutes');
 const complaintRoutes = require('./complaintRoutes');
 const messageRoutes = require('./messageRoutes');
 const userRoutes = require('./userRoutes');  // Added userRoutes import
+const leaseRoutes = require('./leaseRoutes'); // Added leaseRoutes import
 
 // Health check route
 router.get('/health', (req, res) => {
@@ -30,5 +31,6 @@ router.use('/payments', paymentRoutes);
 router.use('/complaints', complaintRoutes);
 router.use('/messages', messageRoutes);
 router.use('/users', userRoutes);  // Added userRoutes registration
+router.use('/leases', leaseRoutes); // Added leaseRoutes registration
 
 module.exports = router;

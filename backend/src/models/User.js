@@ -7,22 +7,13 @@ const userSchema = mongoose.Schema(
       type: String,
       required: [true, 'Please add a name'],
     },
-    email: {
-      type: String,
-      required: [true, 'Please add an email'],
-      unique: true,
-      match: [
-        /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
-        'Please add a valid email',
-      ],
-    },
     phone: {
       type: String,
       required: [true, 'Please add a phone number'],
       unique: true,
       match: [
-        /^[0-9]{10}$/,
-        'Please add a valid 10-digit phone number',
+        /^\+?[0-9]{10,15}$/,
+        'Please add a valid phone number',
       ],
     },
     password: {
@@ -43,6 +34,11 @@ const userSchema = mongoose.Schema(
     resetPasswordToken: String,
     resetPasswordExpire: Date,
     refreshToken: String,
+    nationalId: {
+      type: String,
+      required: [true, 'Please add a national ID'],
+      unique: true,
+    },
   },
   {
     timestamps: true,

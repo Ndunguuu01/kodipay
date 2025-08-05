@@ -21,28 +21,31 @@ const seedUsers = async () => {
     const adminPassword = await bcrypt.hash('admin123', 10);
     const admin = await User.create({
       name: 'Admin User',
-      email: 'admin@example.com',
+      phone: '+254700000001',
       password: adminPassword,
       role: 'admin',
       isAdmin: true,
+      nationalId: '12345678',
     });
 
     // Create property owner
     const ownerPassword = await bcrypt.hash('owner123', 10);
     const owner = await User.create({
       name: 'Property Owner',
-      email: 'owner@example.com',
+      phone: '+254700000002',
       password: ownerPassword,
-      role: 'user',
+      role: 'landlord',
+      nationalId: '12345679',
     });
 
     // Create tenant
     const tenantPassword = await bcrypt.hash('tenant123', 10);
     const tenant = await User.create({
       name: 'John Tenant',
-      email: 'tenant@example.com',
+      phone: '+254700000003',
       password: tenantPassword,
-      role: 'user',
+      role: 'tenant',
+      nationalId: '12345680',
     });
 
     return { admin, owner, tenant };

@@ -47,9 +47,9 @@ class PropertyModel {
       totalRooms: json['totalRooms'] ?? 0,
       occupiedRooms: json['occupiedRooms'],
       floors: (json['floors'] as List<dynamic>?)?.map((f) => FloorModel.fromJson(f)).toList() ?? [],
-      description: json['description'],
+      description: json['description'] as String?,
       landlordId: json['landlordId'],
-      imageUrl: json['imageUrl'],
+      imageUrl: json['imageUrl'] as String?,
       createdAt: DateTime.parse(json['createdAt'] ?? DateTime.now().toIso8601String()),
       updatedAt: DateTime.parse(json['updatedAt'] ?? DateTime.now().toIso8601String()),
     );

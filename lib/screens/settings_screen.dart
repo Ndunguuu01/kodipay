@@ -5,6 +5,8 @@ import 'package:local_auth/local_auth.dart';
 import 'package:kodipay/providers/auth_provider.dart';
 import 'package:kodipay/providers/theme_provider.dart';
 import 'package:go_router/go_router.dart';
+import 'package:kodipay/providers/property_provider.dart';
+import 'package:kodipay/providers/tenant_provider.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -73,6 +75,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (confirmed == true && mounted) {
       try {
         await context.read<AuthProvider>().logout();
+        // Clear other providers' state
+        context.read<PropertyProvider>().clearProperties();
+        context.read<TenantProvider>().clearTenants();
+        // Clear intended destination to prevent redirect loop
+        context.read<AuthProvider>().clearIntendedDestination();
         if (context.mounted) {
           context.go('/login');
         }

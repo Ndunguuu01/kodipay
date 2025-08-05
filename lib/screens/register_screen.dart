@@ -12,11 +12,12 @@ class RegisterScreen extends StatefulWidget {
 
 class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
-  final _emailController = TextEditingController();
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   final _phoneController = TextEditingController();
+  final _nationalIdController = TextEditingController();
   String? _selectedRole;
   bool _isPasswordVisible = false;
   bool _isConfirmPasswordVisible = false;
@@ -24,11 +25,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   void dispose() {
-    _nameController.dispose();
-    _emailController.dispose();
+    _firstNameController.dispose();
+    _lastNameController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     _phoneController.dispose();
+    _nationalIdController.dispose();
     super.dispose();
   }
 
@@ -38,9 +40,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final phoneNumber = _phoneController.text.trim();
     final password = _passwordController.text;
     final role = _selectedRole;
-    final firstName = _nameController.text.trim();
-    final lastName = _nameController.text.trim();
-    final email = _emailController.text.trim();
+    final firstName = _firstNameController.text.trim();
+    final lastName = _lastNameController.text.trim();
+    final nationalId = _nationalIdController.text.trim();
 
     if (role == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -57,9 +59,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
     try {
       await context.read<AuthProvider>().register(
         firstName,
-        email,
+        lastName,
         password,
         phoneNumber,
+        role,
+        nationalId,
       );
       if (context.mounted) {
         context.go('/properties');
@@ -98,7 +102,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   TextFormField(
-                    controller: _nameController,
+                    controller: _firstNameController,
                     decoration: const InputDecoration(
                       labelText: 'First Name',
                       border: OutlineInputBorder(),
@@ -112,7 +116,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
-                    controller: _nameController,
+                    controller: _lastNameController,
                     decoration: const InputDecoration(
                       labelText: 'Last Name',
                       border: OutlineInputBorder(),
@@ -120,24 +124,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     validator: (value) {
                       if (value == null || value.isEmpty) {
                         return 'Please enter your last name';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _emailController,
-                    decoration: const InputDecoration(
-                      labelText: 'Email',
-                      border: OutlineInputBorder(),
-                    ),
-                    keyboardType: TextInputType.emailAddress,
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Please enter your email';
-                      }
-                      if (!value.contains('@')) {
-                        return 'Please enter a valid email';
                       }
                       return null;
                     },
@@ -153,6 +139,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     validator: (value) {
                       if (value == null || value.isEmpty) {
                         return 'Please enter your phone number';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _nationalIdController,
+                    decoration: const InputDecoration(
+                      labelText: 'National ID',
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Please enter your national ID';
                       }
                       return null;
                     },

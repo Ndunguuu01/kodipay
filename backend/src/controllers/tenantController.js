@@ -1,229 +1,179 @@
-const Tenant = require('../models/Tenant');
-const Property = require('../models/Property');
-const User = require('../models/User');
+const Tenant = require('../models/Tenant'); // Assuming tenantModel.js exists for tenant schema
+const mongoose = require('mongoose');
+const Property = require('../models/Property'); // Assuming propertyModel.js exists for property schema
 
-// @desc    Create new tenant
-// @route   POST /api/tenants
-// @access  Private
-const createTenant = async (req, res) => {
+// Create a new tenant (clean, minimal)
+exports.createTenant = async (req, res) => {
+  let session = null;
+  let isReplicaSet = false;
   try {
-    console.log('createTenant called with body:', req.body);
-    console.log('User from request:', req.user);
+    // Check if connected to a replica set
+    const admin = mongoose.connection.db.admin();
+    const info = await admin.command({ isMaster: 1 });
+    isReplicaSet = !!info.setName;
+  } catch (e) {
+    // fallback: assume not a replica set
+    isReplicaSet = false;
+  }
 
-    const { property: propertyId, unit: unitId } = req.body;
-
-    if (!req.user || !req.user._id) {
-      console.error('User not found in request:', req.user);
-      return res.status(401).json({ message: 'User not authenticated' });
+  if (isReplicaSet) {
+    session = await mongoose.startSession();
+    session.startTransaction();
+  }
+  try {
+    const { property, unit, name, phone, nationalId, leaseStart, leaseEnd } = req.body;
+    if (!property || !unit || !name || !phone || !nationalId || !leaseStart || !leaseEnd) {
+      if (isReplicaSet) { await session.abortTransaction(); session.endSession(); }
+      return res.status(400).json({ message: 'Missing required tenant fields.' });
     }
 
-    // Verify property exists and user has access
-    const property = await Property.findById(propertyId);
-    if (!property) {
+    // Check for duplicate phone or nationalId
+    const exists = isReplicaSet
+      ? await Tenant.findOne({ $or: [{ phone }, { nationalId }] }).session(session)
+      : await Tenant.findOne({ $or: [{ phone }, { nationalId }] });
+    if (exists) {
+      if (isReplicaSet) { await session.abortTransaction(); session.endSession(); }
+      return res.status(400).json({ message: 'Phone or National ID already exists' });
+    }
+
+    // Find property and room
+    const propertyDoc = isReplicaSet
+      ? await Property.findById(property).session(session)
+      : await Property.findById(property);
+    if (!propertyDoc) {
+      if (isReplicaSet) { await session.abortTransaction(); session.endSession(); }
       return res.status(404).json({ message: 'Property not found' });
     }
 
-    console.log('Property found:', {
-      id: property._id,
-      landlordId: property.landlordId,
-      user: req.user._id
-    });
-
-    if (
-      property.landlordId.toString() !== req.user._id.toString()
-    ) {
-      return res.status(401).json({ message: 'Not authorized' });
-    }
-
-    // Verify unit exists and is not occupied
-    let unit = null;
-    let floorIndex = -1;
-    let roomIndex = -1;
-
-    for (let i = 0; i < property.floors.length; i++) {
-      const floor = property.floors[i];
-      const roomIdx = floor.rooms.findIndex(room => room._id.toString() === unitId);
-      if (roomIdx !== -1) {
-        unit = floor.rooms[roomIdx];
-        floorIndex = i;
-        roomIndex = roomIdx;
-        break;
+    let foundRoom = null;
+    for (const floor of propertyDoc.floors) {
+      for (const room of floor.rooms) {
+        if (room._id.toString() === unit) {
+          foundRoom = room;
+          break;
+        }
       }
+      if (foundRoom) break;
     }
 
-    if (!unit) {
-      return res.status(404).json({ message: 'Unit not found' });
+    if (!foundRoom) {
+      if (isReplicaSet) { await session.abortTransaction(); session.endSession(); }
+      return res.status(404).json({ message: 'Room not found' });
     }
 
-    if (unit.isOccupied) {
-      return res.status(400).json({ message: 'Unit is already occupied' });
+    if (foundRoom.isOccupied) {
+      if (isReplicaSet) { await session.abortTransaction(); session.endSession(); }
+      return res.status(400).json({ message: 'Room is already occupied' });
     }
 
-    // Create the tenant
-    const tenant = await Tenant.create(req.body);
-
-    // Update the room's status
-    property.floors[floorIndex].rooms[roomIndex].isOccupied = true;
-    property.floors[floorIndex].rooms[roomIndex].tenantId = tenant._id;
-    await property.save();
-
-    res.status(201).json(tenant);
-  } catch (error) {
-    console.error('Error in createTenant:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
-  }
-};
-
-// @desc    Get all tenants
-// @route   GET /api/tenants
-// @access  Private
-const getTenants = async (req, res) => {
-  try {
-    // Find all properties owned or managed by the user
-    const properties = await Property.find({
-      $or: [
-        { landlordId: req.user._id },
-        { manager: req.user._id }
-      ]
-    });
-    const propertyIds = properties.map(p => p._id);
-
-    // Only return tenants with a valid property and unit
-    const tenants = await Tenant.find({
-      property: { $in: propertyIds },
-      unit: { $ne: null },
-    }).populate('property', 'name');
-
-    res.json(tenants);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error' });
-  }
-};
-
-// @desc    Get single tenant
-// @route   GET /api/tenants/:id
-// @access  Private
-const getTenant = async (req, res) => {
-  try {
-    const tenant = await Tenant.findById(req.params.id).populate('property', 'name');
-
-    if (!tenant) {
-      return res.status(404).json({ message: 'Tenant not found' });
-    }
-
-    // Check if user has access
-    const property = await Property.findById(tenant.property);
-    if (
-      property.owner.toString() !== req.user._id.toString() &&
-      property.manager?.toString() !== req.user._id.toString()
-    ) {
-      return res.status(401).json({ message: 'Not authorized' });
-    }
-
-    res.json(tenant);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error' });
-  }
-};
-
-// @desc    Update tenant
-// @route   PUT /api/tenants/:id
-// @access  Private
-const updateTenant = async (req, res) => {
-  try {
-    const tenant = await Tenant.findById(req.params.id);
-
-    if (!tenant) {
-      return res.status(404).json({ message: 'Tenant not found' });
-    }
-
-    // Check if user has access
-    const property = await Property.findById(tenant.property);
-    if (
-      property.owner.toString() !== req.user._id.toString() &&
-      property.manager?.toString() !== req.user._id.toString()
-    ) {
-      return res.status(401).json({ message: 'Not authorized' });
-    }
-
-    const updatedTenant = await Tenant.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true }
-    );
-
-    res.json(updatedTenant);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error' });
-  }
-};
-
-// @desc    Delete tenant
-// @route   DELETE /api/tenants/:id
-// @access  Private
-const deleteTenant = async (req, res) => {
-  try {
-    const tenant = await Tenant.findById(req.params.id);
-
-    if (!tenant) {
-      return res.status(404).json({ message: 'Tenant not found' });
-    }
-
-    // Check if property exists
-    const property = await Property.findById(tenant.property);
-    if (!property) {
-      // Property not found, allow tenant deletion
-      await Tenant.findByIdAndDelete(tenant._id);
-      // Log tenant for debugging
-      console.log('Deleting associated user for tenant:', tenant);
-      // Only try to delete user if email or phone exists
-      if (tenant.email || tenant.phone) {
-        await User.deleteOne({
-          $or: [
-            ...(tenant.email ? [{ email: tenant.email }] : []),
-            ...(tenant.phone ? [{ phone: tenant.phone }] : []),
-          ]
-        });
-      } else {
-        console.warn('Tenant has no email or phone, cannot delete associated user.');
-      }
-      return res.json({ message: 'Tenant and user removed (property not found)' });
-    }
-
-    // Check if user is landlord
-    if (property.landlordId.toString() !== req.user._id.toString()) {
-      return res.status(401).json({ message: 'Not authorized' });
-    }
-
-    await Tenant.findByIdAndDelete(tenant._id);
-    // Log tenant for debugging
-    console.log('Deleting associated user for tenant:', tenant);
-    // Only try to delete user if email or phone exists
-    if (tenant.email || tenant.phone) {
-      await User.deleteOne({
-        $or: [
-          ...(tenant.email ? [{ email: tenant.email }] : []),
-          ...(tenant.phone ? [{ phone: tenant.phone }] : []),
-        ]
-      });
+    // Create tenant
+    let tenant;
+    if (isReplicaSet) {
+      tenant = await Tenant.create([
+        { property, unit, name, phone, nationalId, leaseStart, leaseEnd }
+      ], { session });
     } else {
-      console.warn('Tenant has no email or phone, cannot delete associated user.');
+      tenant = await Tenant.create({ property, unit, name, phone, nationalId, leaseStart, leaseEnd });
+      tenant = [tenant];
     }
 
-    res.json({ message: 'Tenant and user removed' });
+    // Mark room as occupied and set tenantId
+    foundRoom.isOccupied = true;
+    foundRoom.tenantId = tenant[0]._id;
+    if (isReplicaSet) {
+      await propertyDoc.save({ session });
+    } else {
+      await propertyDoc.save();
+    }
+
+    if (isReplicaSet) {
+      await session.commitTransaction();
+      session.endSession();
+    }
+
+    return res.status(201).json({ tenant: tenant[0] });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    if (isReplicaSet && session) {
+      await session.abortTransaction();
+      session.endSession();
+    }
+    console.error('Error creating tenant:', error);
+    return res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
 
-module.exports = {
-  createTenant,
-  getTenants,
-  getTenant,
-  updateTenant,
-  deleteTenant,
-}; 
+// Get all tenants
+exports.getTenants = async (req, res) => {
+  try {
+    const tenants = await Tenant.find();
+    return res.status(200).json(tenants);
+  } catch (error) {
+    console.error('Error fetching tenants:', error);
+    return res.status(500).json({ message: 'Server error fetching tenants' });
+  }
+};
+
+// Get a single tenant by id
+exports.getTenant = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid tenant id' });
+    }
+    const tenant = await Tenant.findById(id);
+    if (!tenant) {
+      return res.status(404).json({ message: 'Tenant not found' });
+    }
+    return res.status(200).json(tenant);
+  } catch (error) {
+    console.error('Error fetching tenant:', error);
+    return res.status(500).json({ message: 'Server error fetching tenant' });
+  }
+};
+
+// Update a tenant by id
+exports.updateTenant = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid tenant id' });
+    }
+    const updatedTenant = await Tenant.findByIdAndUpdate(id, req.body, { new: true });
+    if (!updatedTenant) {
+      return res.status(404).json({ message: 'Tenant not found' });
+    }
+    return res.status(200).json(updatedTenant);
+  } catch (error) {
+    console.error('Error updating tenant:', error);
+    return res.status(500).json({ message: 'Server error updating tenant' });
+  }
+};
+
+// Delete a tenant by id
+exports.deleteTenant = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid tenant id' });
+    }
+    const deletedTenant = await Tenant.findByIdAndDelete(id);
+    if (!deletedTenant) {
+      return res.status(404).json({ message: 'Tenant not found' });
+    }
+    return res.status(200).json({ message: 'Tenant deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting tenant:', error);
+    return res.status(500).json({ message: 'Server error deleting tenant' });
+  }
+};
+
+// Delete all tenants
+exports.deleteAllTenants = async (req, res) => {
+  try {
+    await Tenant.deleteMany({});
+    return res.status(200).json({ message: 'All tenants deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting all tenants:', error);
+    return res.status(500).json({ message: 'Server error deleting all tenants' });
+  }
+};

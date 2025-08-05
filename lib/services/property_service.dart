@@ -84,7 +84,7 @@ class PropertyService {
       Logger.info('Fetching properties for landlord');
 
       final response = await _makeRequest(() => http.get(
-            Uri.parse('$baseUrl/properties/landlord'),
+            Uri.parse('$baseUrl/properties'),
             headers: {
               'Authorization': 'Bearer $token',
               'Content-Type': 'application/json',

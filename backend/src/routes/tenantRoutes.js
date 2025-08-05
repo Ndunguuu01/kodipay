@@ -6,6 +6,7 @@ const {
   getTenant,
   updateTenant,
   deleteTenant,
+  deleteAllTenants,
 } = require('../controllers/tenantController');
 const { protect } = require('../middleware/auth');
 
@@ -22,4 +23,7 @@ router.route('/:id')
   .put(updateTenant)
   .delete(deleteTenant);
 
-module.exports = router; 
+router.route('/all')
+  .delete(deleteAllTenants);
+
+module.exports = router;

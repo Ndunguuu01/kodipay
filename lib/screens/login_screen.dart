@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/auth_provider.dart';
 import 'package:kodipay/services/biometric_service.dart';
+import '../providers/property_provider.dart';
+import 'package:kodipay/services/api_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -143,8 +145,12 @@ class _LoginScreenState extends State<LoginScreen> {
       }
       
       if (context.mounted) {
-        final role = authProvider.auth?.role;
-        if (role == 'landlord') {
+        final displayRole = authProvider.auth?.displayRole;
+        if (displayRole == 'landlord') {
+          // Ensure token is set and refresh properties before navigating
+          final propertyProvider = Provider.of<PropertyProvider>(context, listen: false);
+          await ApiService.setAuthToken(authProvider.auth!.token!);
+          await propertyProvider.refreshProperties(context);
           context.go('/landlord-home');
         } else {
           context.go('/tenant-home');

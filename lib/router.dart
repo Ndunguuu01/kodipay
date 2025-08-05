@@ -1,4 +1,4 @@
-
+import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import 'screens/login_screen.dart';
@@ -31,18 +31,73 @@ import 'package:kodipay/models/property_model.dart';
 
 import 'widgets/bottom_nav_shell.dart';
 
+// Track the last redirect time to prevent redirect loops
+DateTime? _lastRedirectTime;
+const redirectCooldown = Duration(milliseconds: 500); // Shorter cooldown to prevent excessive delays
+
+// Track the last location to prevent redirecting to the same location repeatedly
+String? _lastRedirectLocation;
+
+// Track if we're currently in the process of redirecting
+bool _isRedirecting = false;
+
 GoRouter createRouter(AuthProvider authProvider) {
   return GoRouter(
     initialLocation: '/login',
     refreshListenable: authProvider,
     errorBuilder: (context, state) => const LoginScreen(),
 
-    redirect: (context, state) {
-      final isLoggedIn = authProvider.auth != null;
+    redirect: (context, state) async {
       final location = state.uri.toString();
+      print('Router.redirect: Evaluating redirect for location: $location'); // Debug log
+      
+      // If we're already in the process of redirecting, skip this redirect
+      if (_isRedirecting) {
+        print('Router.redirect: Already redirecting, skipping');
+        return null;
+      }
+      
+      // Implement redirect debounce to prevent loops
+      final now = DateTime.now();
+      if (_lastRedirectTime != null) {
+        final timeSinceLastRedirect = now.difference(_lastRedirectTime!);
+        if (timeSinceLastRedirect < redirectCooldown) {
+          print('Router.redirect: Skipping redirect, too soon after previous redirect (${timeSinceLastRedirect.inMilliseconds}ms)');
+          return null; // Skip redirect if it's too soon after the last one
+        }
+      }
+      
+      // Prevent redirecting to the same location repeatedly
+      if (_lastRedirectLocation == location) {
+        print('Router.redirect: Already at location $location, skipping redirect');
+        return null;
+      }
+      
+      // Wait for auth initialization to complete before checking auth state
+      if (authProvider.isLoading) {
+        print('Router.redirect: AuthProvider is initializing, waiting...'); // Debug log
+        // Wait for initialization to complete
+        await Future.delayed(const Duration(milliseconds: 100));
+        // Re-check after a short delay
+        if (authProvider.isLoading) {
+          print('Router.redirect: Still initializing, returning null'); // Debug log
+          return null; // Don't redirect while initializing
+        }
+      }
+      
+      print('Router.redirect: Checking auth state'); // Debug log
+      final isLoggedIn = authProvider.auth != null;
+      print('Router.redirect: isLoggedIn = $isLoggedIn'); // Debug log
 
       Logger.info('Router Redirect: Navigating to $location');
       Logger.info('Router Redirect: User logged in: $isLoggedIn');
+      
+      // Additional debug info about auth state
+      if (authProvider.auth != null) {
+        print('Router.redirect: Auth user ID: ${authProvider.auth!.id}, Name: ${authProvider.auth!.name}'); // Debug log
+      } else {
+        print('Router.redirect: No auth user'); // Debug log
+      }
 
       const publicRoutes = [
         '/login',
@@ -52,27 +107,73 @@ GoRouter createRouter(AuthProvider authProvider) {
       ];
 
       final isPublicRoute = publicRoutes.any((route) => location.startsWith(route));
+      print('Router.redirect: isPublicRoute = $isPublicRoute'); // Debug log
 
-      if (!isLoggedIn && !isPublicRoute) {
-        Logger.warning('Redirecting to login: Not authenticated');
-        // Store the intended destination
-        authProvider.setIntendedDestination(location);
-        return '/login';
+      // If not logged in, always go to login (do not restore previous route)
+      if (!isLoggedIn) {
+        // Only if we're not already on a public route
+        if (!isPublicRoute) {
+          Logger.warning('Redirecting to login: Not authenticated');
+          authProvider.clearIntendedDestination();
+          
+          // Store the current location for redirect tracking
+          _lastRedirectTime = DateTime.now();
+          _lastRedirectLocation = '/login';
+          _isRedirecting = true;
+          print('Router.redirect: Redirecting to /login'); // Debug log
+          
+          // Reset the redirecting flag after a short delay
+          Future.delayed(redirectCooldown, () {
+            _isRedirecting = false;
+          });
+          
+          return '/login';
+        }
+        print('Router.redirect: Already on public route, no redirect needed'); // Debug log
+        return null; // Already on a public route, no need to redirect
       }
 
       if (isLoggedIn && isPublicRoute) {
+        final displayRole = authProvider.auth?.displayRole;
         final role = authProvider.auth?.role;
+        print('DEBUG: Router redirect - role: $role, displayRole: $displayRole');
         final intendedDestination = authProvider.intendedDestination;
         Logger.info('Redirecting logged in user to home or intended destination');
 
         if (intendedDestination != null) {
           authProvider.clearIntendedDestination();
+          
+          // Store the current location for redirect tracking
+          _lastRedirectTime = DateTime.now();
+          _lastRedirectLocation = intendedDestination;
+          _isRedirecting = true;
+          print('Router.redirect: Redirecting to intended destination: $intendedDestination'); // Debug log
+          
+          // Reset the redirecting flag after a short delay
+          Future.delayed(redirectCooldown, () {
+            _isRedirecting = false;
+          });
+          
           return intendedDestination;
         }
 
-        return role == 'landlord' ? '/landlord-home' : '/tenant-home';
+        final homeRoute = displayRole == 'landlord' ? '/landlord-home' : '/tenant-home';
+        
+        // Store the current location for redirect tracking
+        _lastRedirectTime = DateTime.now();
+        _lastRedirectLocation = homeRoute;
+        _isRedirecting = true;
+        print('Router.redirect: Redirecting to home route: $homeRoute'); // Debug log
+        
+        // Reset the redirecting flag after a short delay
+        Future.delayed(redirectCooldown, () {
+          _isRedirecting = false;
+        });
+        
+        return homeRoute;
       }
 
+      print('Router.redirect: No redirect needed'); // Debug log
       return null; // No redirect needed
     },
 
@@ -107,7 +208,14 @@ GoRouter createRouter(AuthProvider authProvider) {
 
       // Landlord Shell & Routes
       ShellRoute(
-        builder: (context, state, child) => BottomNavShell(child: child),
+        builder: (context, state, child) {
+          final displayRole = authProvider.auth?.displayRole ?? '';
+          if (displayRole == 'landlord') {
+            return BottomNavShell(child: child);
+          } else {
+            return Scaffold(body: child); // No bottom nav for non-landlord
+          }
+        },
         routes: [
           GoRoute(
             path: '/landlord-home',
@@ -213,9 +321,24 @@ GoRouter createRouter(AuthProvider authProvider) {
               ),
             ],
           ),
+        ],
+      ),
+
+      // Tenant Shell & Routes
+      ShellRoute(
+        builder: (context, state, child) {
+          final displayRole = authProvider.auth?.displayRole ?? '';
+          if (displayRole == 'tenant') {
+            return BottomNavShell(child: child);
+          } else {
+            return Scaffold(body: child); // No bottom nav for non-tenant
+          }
+        },
+        routes: [
           GoRoute(
             path: '/tenant-home',
             builder: (context, state) => const TenantHomeScreen(),
+            // Add tenant-specific nested routes here if needed
           ),
         ],
       ),
@@ -282,6 +405,6 @@ GoRouter createRouter(AuthProvider authProvider) {
           return DirectMessageErrorScreen(recipientId: id);
         },
       ),
-      ],
-    );
-  }
+    ],
+  );
+}

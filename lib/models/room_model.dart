@@ -18,7 +18,7 @@ class RoomModel {
       id: json['_id'],
       roomNumber: json['roomNumber'],
       isOccupied: json['isOccupied'] ?? false,
-      tenantId: json['tenantId'],
+      tenantId: json['tenantId'] as String?,
       rentAmount: (json['rentAmount'] ?? 0).toDouble(),
     );
   }

@@ -22,12 +22,12 @@ class PropertyProvider with ChangeNotifier {
 
   /// Fetch properties for a landlord
   Future<void> fetchProperties(BuildContext context) async {
-    // Check if we have a valid cache
-    if (_lastFetchTime != null && 
-        DateTime.now().difference(_lastFetchTime!) < _cacheDuration &&
-        _properties.isNotEmpty) {
-      return; // Use cached data
-    }
+    // Disabled cache for debugging:
+    // if (_lastFetchTime != null && 
+    //     DateTime.now().difference(_lastFetchTime!) < _cacheDuration &&
+    //     _properties.isNotEmpty) {
+    //   return; // Use cached data
+    // }
 
     try {
       _isLoading = true;

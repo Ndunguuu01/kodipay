@@ -18,28 +18,12 @@ class TenantProvider with ChangeNotifier {
   String? get lastCreatedTenantId => _lastCreatedTenantId;
 
   String normalizePhoneNumber(String phone) {
-    if (phone.isEmpty) {
-      // print('normalizePhoneNumber: Empty phone number');
-      return phone;
-    }
+    if (phone.isEmpty) return phone;
     String digits = phone.replaceAll(RegExp(r'[^\d]'), '');
-    if (digits.startsWith('0')) {
-      digits = digits.substring(1);
-    }
-    if (digits.startsWith('7') && digits.length == 9) {
-      // print('normalizePhoneNumber: raw=$phone, normalized=+254$digits');
-      return '+254$digits';
-    }
-    if (digits.startsWith('254') && digits.length == 12) {
-      // print('normalizePhoneNumber: raw=$phone, normalized=+$digits');
+    if (phone.startsWith('+')) {
       return '+$digits';
     }
-    if (RegExp(r'^\+2547\d{8}$').hasMatch(phone)) {
-      // print('normalizePhoneNumber: raw=$phone, already normalized');
-      return phone;
-    }
-    // print('normalizePhoneNumber: Invalid format for $phone, returning unchanged');
-    return phone;
+    return '+$digits';
   }
 
   Future<void> fetchTenants() async {
@@ -87,7 +71,7 @@ class TenantProvider with ChangeNotifier {
     try {
       final normalizedPhone = normalizePhoneNumber(phone);
       // print('checkPhoneNumber: raw=$phone, normalized=$normalizedPhone');
-      if (!RegExp(r'^\+2547\d{8}$').hasMatch(normalizedPhone)) {
+      if (!RegExp(r'^\+?[0-9]{10,15}$').hasMatch(normalizedPhone)) {
         // print('checkPhoneNumber: Invalid format: $normalizedPhone');
         _error = 'Invalid phone number format: $normalizedPhone';
         return false;
@@ -116,51 +100,30 @@ class TenantProvider with ChangeNotifier {
     }
   }
 
-  Future<bool> createAndAssignTenant({
-    required String propertyId,
+  Future<Map<String, dynamic>?> createUser({
     required String name,
     required String phone,
-    String? nationalId,
+    required String nationalId,
     String? email,
+    required String password,
     required String token,
-    required int floorNumber,
-    required String roomNumber,
-    String? roomId,
   }) async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-
+    if (nationalId.isEmpty) {
+      _error = 'National ID is required.';
+      return null;
+    }
     try {
-      final normalizedPhone = normalizePhoneNumber(phone);
-      // print('createAndAssignTenant: raw phone=$phone, normalized=$normalizedPhone');
-
-      if (!RegExp(r'^\+2547\d{8}$').hasMatch(normalizedPhone)) {
-        _error = 'Invalid phone number format: $normalizedPhone. Must be +254 followed by 9 digits starting with 7.';
-        // print('createAndAssignTenant: Invalid phone format: $normalizedPhone');
-        return false;
-      }
-
-      final phoneExists = await checkPhoneNumber(normalizedPhone, token);
-      if (phoneExists) {
-        _error = 'Phone number already exists: $normalizedPhone';
-        // print('createAndAssignTenant: Phone number check failed: $normalizedPhone exists');
-        return false;
-      }
-
       final createPayload = {
-        'fullName': name.trim(),
-        'phoneNumber': normalizedPhone,
+        'name': name.trim(),
+        'phone': phone,
         'role': 'tenant',
-        'password': generatePassword(),
+        'password': password,
         if (email != null && email.isNotEmpty) 'email': email.trim(),
-        if (nationalId != null && nationalId.isNotEmpty) 'nationalId': nationalId.trim(),
+        'nationalId': nationalId.trim(),
       };
 
-      // print('createAndAssignTenant: Creating tenant with payload: ${jsonEncode(createPayload)}');
-
       final createResponse = await ApiService.post(
-        '/users',
+        '/auth/register',
         createPayload,
         headers: {
           'Content-Type': 'application/json',
@@ -168,11 +131,8 @@ class TenantProvider with ChangeNotifier {
         },
       );
 
-      // print('createAndAssignTenant response status: ${createResponse.statusCode}');
-      // print('createAndAssignTenant response body: ${createResponse.body}');
-
       if (createResponse.statusCode != 201) {
-        String errorMessage = 'Failed to create tenant: ${createResponse.statusCode}';
+        String errorMessage = 'Failed to create user: ${createResponse.statusCode}';
         try {
           final errorData = jsonDecode(createResponse.body);
           errorMessage += ' - ${errorData['message'] ?? 'Unknown error'}';
@@ -180,71 +140,156 @@ class TenantProvider with ChangeNotifier {
           errorMessage += ' - ${createResponse.body}';
         }
         _error = errorMessage;
-        // print('createAndAssignTenant: Error: $errorMessage');
-        return false;
+        return null;
       }
 
-      final tenantData = jsonDecode(createResponse.body);
-      if (tenantData is! Map<String, dynamic> || tenantData['tenant'] is! Map<String, dynamic>) {
-        _error = 'Invalid tenant creation response: Expected tenant object';
-        // print('createAndAssignTenant: Invalid response format');
-        return false;
+      final userData = jsonDecode(createResponse.body);
+      if (userData == null || (userData['id'] == null && (userData['data'] == null || userData['data']['id'] == null))) {
+        _error = 'User creation failed or missing user id.';
+        return null;
       }
-      if (tenantData['tenant']['id'] == null) {
-        _error = 'Tenant creation response missing tenant id';
-        // print('createAndAssignTenant: Missing tenant.id');
-        return false;
-      }
-      _lastCreatedTenantId = tenantData['tenant']['id'].toString();
+      return userData;
+    } catch (e) {
+      _error = 'Error creating user: $e';
+      return null;
+    }
+  }
 
-      // Add delay to ensure tenant is committed to database
-      // print('createAndAssignTenant: Waiting 500ms before assigning tenant');
-      await Future.delayed(const Duration(milliseconds: 500));
-
-      final assignPayload = {
-        'floorNumber': floorNumber,
-        'roomNumber': roomNumber,
-        'tenantId': _lastCreatedTenantId,
-        if (roomId != null) 'roomId': roomId,
+  Future<bool> createTenantRecord({
+    required String propertyId,
+    required String roomId,
+    required String firstName,
+    required String lastName,
+    required String phoneNumber,
+    required String nationalId,
+    required String token,
+  }) async {
+    try {
+      final now = DateTime.now();
+      final leaseStart = now.toIso8601String();
+      final leaseEnd = DateTime(now.year + 1, now.month, now.day).toIso8601String();
+      final tenantPayload = {
+        'property': propertyId,
+        'unit': roomId,
+        'name': '${firstName.trim()} ${lastName.trim()}',
+        'phone': phoneNumber,
+        'nationalId': nationalId.trim(),
+        'leaseStart': leaseStart,
+        'leaseEnd': leaseEnd,
       };
-
-      // print('createAndAssignTenant: Assigning tenant with payload: ${jsonEncode(assignPayload)}');
-
-      final assignResponse = await ApiService.put(
-        '/properties/$propertyId/assign-tenant',
-        assignPayload,
+      print('Sending tenant payload: $tenantPayload');
+      final tenantResponse = await ApiService.post(
+        '/tenants',
+        tenantPayload,
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
         },
       );
-
-      // print('createAndAssignTenant: Assign tenant response status: ${assignResponse.statusCode}');
-      // print('createAndAssignTenant: Assign tenant response body: ${assignResponse.body}');
-
-      if (assignResponse.statusCode == 200) {
-        final contentType = assignResponse.headers['content-type'];
-        if (contentType != null && contentType.contains('application/json')) {
-          final data = jsonDecode(assignResponse.body);
-          if (data['tenant'] != null) {
-            final newTenant = TenantModel.fromJson(data['tenant']);
-            _tenants.add(newTenant);
-          }
-          // print('createAndAssignTenant: Success');
-          return true;
-        } else {
-          _error = 'Unexpected response format: Expected JSON, got $contentType';
-          // print('createAndAssignTenant: Unexpected response format');
-          return false;
+      print('Tenant creation response status: ${tenantResponse.statusCode}');
+      print('Tenant creation response body: ${tenantResponse.body}');
+      if (tenantResponse.statusCode != 201) {
+        String errorMessage = 'Tenant creation failed:  [33m${tenantResponse.statusCode} [0m';
+        try {
+          final errorData = jsonDecode(tenantResponse.body);
+          errorMessage += ' -  [31m${errorData['message'] ?? 'Unknown error'} [0m';
+        } catch (_) {
+          errorMessage += ' - ${tenantResponse.body}';
         }
-      } else {
-        _error = 'Failed to assign tenant: ${assignResponse.statusCode} - ${assignResponse.body}';
-        // print('createAndAssignTenant: Assign failed: $_error');
+        print('Tenant creation error: $errorMessage');
+        _error = errorMessage; // <-- Show backend error in UI
         return false;
       }
+      print('Tenant created successfully!');
+      return true;
+    } catch (e) {
+      print('Tenant creation error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> createAndAssignTenant({
+    required String firstName,
+    required String lastName,
+    required String phone,
+    required String nationalId,
+    String? email,
+    required String propertyId,
+    String? roomId,
+    required int floorNumber,
+    required String roomNumber,
+    required BuildContext context,
+  }) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final normalizedPhone = normalizePhoneNumber(phone);
+      if (!RegExp(r'^\+?[0-9]{10,15}$').hasMatch(normalizedPhone)) {
+        _error = 'Invalid phone number format: $normalizedPhone';
+        return false;
+      }
+      if (nationalId.isEmpty) {
+        _error = 'National ID is required.';
+        return false;
+      }
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final token = authProvider.auth?.token;
+      if (token == null) {
+        _error = 'Authentication token not found';
+        return false;
+      }
+
+      final userExists = await checkPhoneNumber(normalizedPhone, token);
+      if (userExists) {
+        _error = 'Phone number already exists: $normalizedPhone';
+        return false;
+      }
+
+      const defaultPassword = 'password123';
+
+      final userData = await createUser(
+        name: '$firstName $lastName',
+        phone: normalizedPhone,
+        nationalId: nationalId,
+        email: email,
+        password: defaultPassword,
+        token: token,
+      );
+
+      if (userData == null) {
+        // _error is already set in createUser
+        return false;
+      }
+      final userId = userData['id'] ?? (userData['data'] != null ? userData['data']['id'] : null);
+      if (userId == null) {
+        _error = 'User creation failed or missing user id.';
+        return false;
+      }
+
+      final tenantCreated = await createTenantRecord(
+        propertyId: propertyId,
+        roomId: roomId!,
+        firstName: firstName,
+        lastName: lastName,
+        phoneNumber: normalizedPhone,
+        nationalId: nationalId,
+        token: token,
+      );
+
+      if (!tenantCreated) {
+        return false;
+      }
+
+      // TODO: Assign tenant to property/unit if needed (depends on backend implementation)
+
+      // Send SMS notification about default password
+      await _sendPasswordNotification(normalizedPhone, defaultPassword, token);
+
+      return true;
     } catch (e) {
       _error = 'Error creating and assigning tenant: $e';
-      // print('createAndAssignTenant error: $e');
       return false;
     } finally {
       _isLoading = false;
@@ -332,123 +377,60 @@ class TenantProvider with ChangeNotifier {
     );
   }
 
-  Future<TenantModel?> createTenant({
-    required String firstName,
-    required String lastName,
-    required String phoneNumber,
-    String? email,
-    String? nationalId,
+  /// Clean, minimal tenant creation
+  Future<bool> createTenant({
     required String propertyId,
-    String? roomId,
+    required String roomId,
+    required String name,
+    required String phone,
+    required String nationalId,
     required BuildContext context,
   }) async {
-    _setLoading(true);
+    _isLoading = true;
     _error = null;
     notifyListeners();
-
     try {
-      final normalizedPhone = normalizePhoneNumber(phoneNumber);
-      if (!RegExp(r'^\+2547\d{8}$').hasMatch(normalizedPhone)) {
-        _error = 'Invalid phone number format: $normalizedPhone. Must be +254 followed by 9 digits starting with 7.';
-        return null;
-      }
-
-      // Get auth token
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       final token = authProvider.auth?.token;
-      if (token == null) {
-        _error = 'Authentication token not found';
-        return null;
-      }
-
-      // Use default password as requested
-      const defaultPassword = 'password123';
-
-      // Create the user account with the correct API endpoint and field names
-      final userPayload = {
-        'name': '${firstName.trim()} ${lastName.trim()}',
-        'email': email?.trim() ?? '${firstName.toLowerCase()}.${lastName.toLowerCase()}@example.com',
-        'phone': normalizedPhone,
-        'password': defaultPassword,
-        'role': 'tenant',
-        if (nationalId != null && nationalId.isNotEmpty) 'nationalId': nationalId.trim(),
+      final payload = {
+        'property': propertyId,
+        'unit': roomId,
+        'name': name.trim(),
+        'phone': phone.trim(),
+        'nationalId': nationalId.trim(),
+        'leaseStart': DateTime.now().toIso8601String(),
+        'leaseEnd': DateTime(DateTime.now().year + 1, DateTime.now().month, DateTime.now().day).toIso8601String(),
       };
-
-      final userResponse = await ApiService.post(
-        '/auth/register',
-        userPayload,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      );
-
-      if (userResponse.statusCode != 201) {
-        String errorMessage = 'Failed to create user account: ${userResponse.statusCode}';
-        try {
-          final errorData = jsonDecode(userResponse.body);
-          errorMessage += ' - ${errorData['message'] ?? 'Unknown error'}';
-        } catch (_) {
-          errorMessage += ' - ${userResponse.body}';
-        }
-        _error = errorMessage;
-        return null;
-      }
-
-      final userData = jsonDecode(userResponse.body);
-      final userId = userData['data']['id'] ?? userData['id'];
-      
-      if (userId == null) {
-        _error = 'User creation response missing user id';
-        return null;
-      }
-
-      // Create tenant record
-      final tenantPayload = {
-        'userId': userId,
-        'propertyId': propertyId,
-        'roomId': roomId,
-        'firstName': firstName.trim(),
-        'lastName': lastName.trim(),
-        'phoneNumber': normalizedPhone,
-        'email': email?.trim(),
-        'nationalId': nationalId?.trim(),
-        'status': 'active',
-        'paymentStatus': 'pending',
-      };
-
-      final tenantResponse = await ApiService.post(
+      print('Sending tenant payload: $payload');
+      final response = await ApiService.post(
         '/tenants',
-        tenantPayload,
+        payload,
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
+          if (token != null) 'Authorization': 'Bearer $token',
         },
       );
-
-      if (tenantResponse.statusCode != 201) {
-        String errorMessage = 'Failed to create tenant record: ${tenantResponse.statusCode}';
+      print('Tenant creation response status:  [33m${response.statusCode} [0m');
+      print('Tenant creation response body: ${response.body}');
+      if (response.statusCode == 201) {
+        print('Tenant created successfully!');
+        return true;
+      } else {
+        String errorMessage = 'Tenant creation failed: ${response.statusCode}';
         try {
-          final errorData = jsonDecode(tenantResponse.body);
+          final errorData = jsonDecode(response.body);
           errorMessage += ' - ${errorData['message'] ?? 'Unknown error'}';
         } catch (_) {
-          errorMessage += ' - ${tenantResponse.body}';
+          errorMessage += ' - ${response.body}';
         }
+        print('Tenant creation error: $errorMessage');
         _error = errorMessage;
-        return null;
+        return false;
       }
-
-      final tenantData = jsonDecode(tenantResponse.body);
-      final newTenant = TenantModel.fromJson(tenantData['data'] ?? tenantData);
-      _tenants.add(newTenant);
-
-      // Send SMS notification about default password
-      await _sendPasswordNotification(normalizedPhone, defaultPassword, token);
-
-      return newTenant;
     } catch (e) {
-      _error = 'Error creating tenant: $e';
-      return null;
+      print('Tenant creation error: $e');
+      _error = 'Tenant creation error: $e';
+      return false;
     } finally {
       _isLoading = false;
       notifyListeners();

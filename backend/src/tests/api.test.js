@@ -16,16 +16,18 @@ let testTenantUser;
 // Test data
 const testOwner = {
   name: 'Test Owner',
-  email: 'owner@test.com',
+  phone: '+254700000004',
   password: 'password123',
-  role: 'owner',
+  role: 'landlord',
+  nationalId: '12345681',
 };
 
 const testTenant = {
   name: 'Test Tenant',
-  email: 'tenant@test.com',
+  phone: '+254700000005',
   password: 'password123',
   role: 'tenant',
+  nationalId: '12345682',
 };
 
 const testPropertyData = {
@@ -87,7 +89,7 @@ describe('Auth Endpoints', () => {
     const res = await request(app)
       .post('/api/auth/login')
       .send({
-        email: testOwner.email,
+        phone: testOwner.phone,
         password: testOwner.password,
       });
     expect(res.statusCode).toBe(200);

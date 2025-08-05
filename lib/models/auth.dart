@@ -44,7 +44,7 @@ class AuthModel {
     }
 
     return AuthModel(
-      id: json['id'] as String? ?? '',
+      id: json['id'] as String? ?? json['_id'] as String? ?? '',
       email: json['email'] as String? ?? '',
       phoneNumber: json['phoneNumber'] as String? ?? '',
       role: json['role'] as String? ?? '',

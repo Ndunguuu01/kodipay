@@ -84,6 +84,14 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
     }
   }
 
+  int? _calculatedSelectedIndex;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _calculatedSelectedIndex = _calculateSelectedIndex(context);
+  }
+
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
@@ -121,8 +129,8 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
       if (assignedRoom != null) break;
     }
 
-    // Always update _selectedIndex based on the current route
-    _selectedIndex = _calculateSelectedIndex(context);
+    // Use _calculatedSelectedIndex instead of updating _selectedIndex here
+    final selectedIndex = _calculatedSelectedIndex ?? 0;
 
     return Scaffold(
       body: SingleChildScrollView(
@@ -292,7 +300,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
             label: 'Profile',
           ),
         ],
-        currentIndex: _selectedIndex,
+        currentIndex: selectedIndex,
         selectedItemColor: const Color(0xFF90CAF9),
         unselectedItemColor: Colors.grey,
         onTap: _onItemTapped,

@@ -6,6 +6,10 @@ const propertySchema = mongoose.Schema(
       type: String,
       required: [true, 'Please add a property name'],
     },
+    address: {
+      type: String,
+      required: [true, 'Please add a property address'],
+    },
     rentAmount: {
       type: Number,
       required: [true, 'Please specify rent amount'],

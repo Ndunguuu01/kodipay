@@ -289,9 +289,38 @@ class _TenantListScreenState extends State<TenantListScreen> {
     String roomName = 'Unassigned';
     String floorName = 'Unassigned';
 
-    if (tenant.property != null && tenant.property is Map && tenant.property['_id'] != null) {
+    if (tenant.property != null) {
       final property = propertyProvider.properties.firstWhere(
-        (p) => p.id == tenant.property['_id'],
+        (p) => p.id == tenant.property!.id,
+        orElse: () => PropertyModel(
+          id: '',
+          name: '',
+          address: '',
+          rentAmount: 0,
+          totalRooms: 0,
+          occupiedRooms: 0,
+          floors: [],
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        ),
+      );
+      propertyName = property.name;
+
+      // Find room and floor by tenant.unit
+      if (tenant.unit != null && tenant.unit!.isNotEmpty) {
+        for (var floor in property.floors) {
+          final rooms = floor.rooms.where((r) => r.id == tenant.unit).toList();
+          if (rooms.isNotEmpty) {
+            roomName = rooms.first.roomNumber;
+            floorName = floor.floorNumber.toString();
+            break;
+          }
+        }
+      }
+    } else if (tenant.property is Map && tenant.property != null && (tenant.property as Map)['_id'] != null) {
+      // Fallback for raw JSON data
+      final property = propertyProvider.properties.firstWhere(
+        (p) => p.id == (tenant.property as Map)['_id'],
         orElse: () => PropertyModel(
           id: '',
           name: '',
@@ -407,31 +436,31 @@ class _TenantListScreenState extends State<TenantListScreen> {
                   tenant.paymentStatus ?? 'Unknown',
                   _getPaymentStatusColor(tenant.paymentStatus),
                 ),
-                Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.picture_as_pdf, color: Colors.red),
-                      tooltip: 'View Payment History / Download Invoice',
-                      onPressed: () {
-                        _showPaymentHistoryDialog(context, tenant);
-                      },
+                    Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.picture_as_pdf, color: Colors.red),
+                          tooltip: 'View Payment History / Download Invoice',
+                          onPressed: () {
+                            _showPaymentHistoryDialog(context, tenant);
+                          },
+                        ),
+                        if (tenant.property != null && tenant.unit != null && tenant.unit!.isNotEmpty)
+                          IconButton(
+                            icon: const Icon(Icons.logout, color: Colors.orange),
+                            tooltip: 'Unassign Tenant',
+                            onPressed: () async {
+                              await _unassignTenant(context, tenant);
+                            },
+                          ),
+                        IconButton(
+                          icon: const Icon(Icons.more_vert),
+                          onPressed: () {
+                            // TODO: Show tenant actions menu
+                          },
+                        ),
+                      ],
                     ),
-                    if (tenant.property != null && tenant.unit != null && tenant.unit!.isNotEmpty)
-                      IconButton(
-                        icon: const Icon(Icons.logout, color: Colors.orange),
-                        tooltip: 'Unassign Tenant',
-                        onPressed: () async {
-                          await _unassignTenant(context, tenant);
-                        },
-                      ),
-                    IconButton(
-                      icon: const Icon(Icons.more_vert),
-                      onPressed: () {
-                        // TODO: Show tenant actions menu
-                      },
-                    ),
-                  ],
-                ),
               ],
             ),
           ],
@@ -526,8 +555,14 @@ class _TenantListScreenState extends State<TenantListScreen> {
     final tenantProvider = Provider.of<TenantProvider>(context, listen: false);
     String? propertyId;
     String? roomId;
-    if (tenant.property != null && tenant.property is Map && tenant.property['_id'] != null) {
-      propertyId = tenant.property['_id'];
+    if (tenant.property != null) {
+      if (tenant.property is PropertyModel) {
+        propertyId = tenant.property!.id;
+      } else if (tenant.property is Map && (tenant.property as Map)['id'] != null) {
+        propertyId = (tenant.property as Map)['id'];
+      } else if (tenant.property is Map && (tenant.property as Map)['_id'] != null) {
+        propertyId = (tenant.property as Map)['_id'];
+      }
     }
     if (tenant.unit != null && tenant.unit!.isNotEmpty) {
       roomId = tenant.unit;

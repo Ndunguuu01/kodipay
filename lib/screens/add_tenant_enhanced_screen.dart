@@ -33,7 +33,6 @@ class _AddTenantEnhancedScreenState extends State<AddTenantEnhancedScreen> {
   final _firstNameController = TextEditingController();
   final _lastNameController = TextEditingController();
   final _phoneController = TextEditingController();
-  final _emailController = TextEditingController();
   final _nationalIdController = TextEditingController();
   bool _isLoading = false;
   
@@ -55,7 +54,6 @@ class _AddTenantEnhancedScreenState extends State<AddTenantEnhancedScreen> {
     _firstNameController.dispose();
     _lastNameController.dispose();
     _phoneController.dispose();
-    _emailController.dispose();
     _nationalIdController.dispose();
     super.dispose();
   }
@@ -153,19 +151,20 @@ class _AddTenantEnhancedScreenState extends State<AddTenantEnhancedScreen> {
     try {
       final tenantProvider = Provider.of<TenantProvider>(context, listen: false);
       final result = await tenantProvider.createTenant(
-        firstName: _firstNameController.text.trim(),
-        lastName: _lastNameController.text.trim(),
-        phoneNumber: _phoneController.text.trim(),
-        email: _emailController.text.trim(),
-        nationalId: _nationalIdController.text.trim(),
         propertyId: _selectedProperty!.id,
         roomId: _selectedRoom!.id,
+        name: '${_firstNameController.text.trim()} ${_lastNameController.text.trim()}',
+        phone: _phoneController.text.trim(),
+        nationalId: _nationalIdController.text.trim(),
         context: context,
       );
 
-      if (result != null) {
+      if (result == true) {
+        // Refresh properties to update room occupancy
+        final propertyProvider = Provider.of<PropertyProvider>(context, listen: false);
+        await propertyProvider.refreshProperties(context);
         if (mounted) {
-          context.pop({'tenant': result.toJson()});
+          context.pop({'success': true});
         }
       } else {
         if (mounted) {
@@ -588,22 +587,8 @@ class _AddTenantEnhancedScreenState extends State<AddTenantEnhancedScreen> {
                   keyboardType: TextInputType.phone,
                   validator: (value) {
                     if (value == null || value.isEmpty) return 'Required';
-                    if (!RegExp(r'^\+2547\d{8}$').hasMatch(value)) {
-                      return 'Must be in format: +2547XXXXXXXX';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                _buildTextField(
-                  controller: _emailController,
-                  label: 'Email (Optional)',
-                  icon: Icons.email,
-                  keyboardType: TextInputType.emailAddress,
-                  validator: (value) {
-                    if (value == null || value.isEmpty) return null;
-                    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
-                      return 'Enter a valid email address';
+                    if (!RegExp(r'^\+?[0-9]{10,15}$').hasMatch(value)) {
+                      return 'Must be a valid phone number, e.g. +254703969986';
                     }
                     return null;
                   },
@@ -611,15 +596,9 @@ class _AddTenantEnhancedScreenState extends State<AddTenantEnhancedScreen> {
                 const SizedBox(height: 16),
                 _buildTextField(
                   controller: _nationalIdController,
-                  label: 'National ID (Optional)',
+                  label: 'National ID',
                   icon: Icons.badge,
-                  validator: (value) {
-                    if (value == null || value.isEmpty) return null;
-                    if (value.length < 5) {
-                      return 'Must be at least 5 characters';
-                    }
-                    return null;
-                  },
+                  validator: (value) => value == null || value.isEmpty ? 'National ID is required' : null,
                 ),
                 const SizedBox(height: 24),
                 SizedBox(
@@ -670,6 +649,8 @@ class _AddTenantEnhancedScreenState extends State<AddTenantEnhancedScreen> {
       ),
       keyboardType: keyboardType,
       validator: validator,
+      // Add the name property for accessibility
+      autofillHints: [label],
     );
   }
 } 

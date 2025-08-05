@@ -126,9 +126,8 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
       final propertyProvider = context.read<PropertyProvider>();
       final complaintProvider = context.read<ComplaintProvider>();
 
-      if (propertyProvider.properties.isEmpty) {
-        await propertyProvider.fetchProperties(context);
-      }
+      // Always refresh properties after login to ensure fresh data
+      await propertyProvider.refreshProperties(context);
       
       if (complaintProvider.complaints.isEmpty) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -176,6 +175,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
         ? '${user!.firstName} ${user.lastName}'
         : (user?.firstName ?? user?.name ?? 'User');
     final profilePhotoUrl = user?.profilePicture;
+    final isLandlord = user?.role == 'landlord';
 
     String greeting() {
       final hour = DateTime.now().hour;
@@ -303,11 +303,13 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => context.go('/landlord-home/properties/add'),
-        tooltip: 'Add Property',
-        child: const Icon(Icons.add),
-      ),
+      floatingActionButton: isLandlord
+          ? FloatingActionButton(
+              onPressed: () => context.go('/landlord-home/properties/add'),
+              tooltip: 'Add Property',
+              child: const Icon(Icons.add),
+            )
+          : null,
       bottomNavigationBar: null,
     );
   }

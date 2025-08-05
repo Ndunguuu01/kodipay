@@ -4,7 +4,9 @@ import '../models/property_model.dart';
 import '../providers/property_provider.dart';
 import '../providers/tenant_provider.dart';
 import '../models/tenant_model.dart' as tenantModel;
+import '../models/floor_model.dart';
 import 'package:go_router/go_router.dart';
+import '../providers/message_provider.dart';
 
 class PropertyDetailsScreen extends StatelessWidget {
   final PropertyModel property;
@@ -41,6 +43,27 @@ class PropertyDetailsScreen extends StatelessWidget {
         .map((room) => room.tenantId!)
         .toSet();
 
+    // Find Room A on Floor 1
+    final floor1 = updatedProperty.floors.firstWhere(
+      (f) => f.floorNumber == 1,
+      orElse: () => updatedProperty.floors.isNotEmpty ? updatedProperty.floors.first : 
+        FloorModel(id: '', floorNumber: 1, rooms: []),
+    );
+    final roomA = floor1.rooms.isNotEmpty ? floor1.rooms.firstWhere(
+          (r) => r.roomNumber.toString().toLowerCase() == 'a',
+          orElse: () => floor1.rooms.first,
+        ) : null;
+    // Find first unassigned tenant
+    final unassignedTenant = tenantProvider.tenants.firstWhere(
+      (t) => !assignedTenantIds.contains(t.id),
+      orElse: () => tenantModel.TenantModel(
+        id: '',
+        phoneNumber: '',
+        status: '',
+        paymentStatus: '',
+      ),
+    );
+
     return Scaffold(
       appBar: AppBar(
         title: Text(updatedProperty.address),
@@ -50,6 +73,34 @@ class PropertyDetailsScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (roomA != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16.0),
+                child: ElevatedButton(
+                  onPressed: () async {
+                    final propertyProvider = Provider.of<PropertyProvider>(context, listen: false);
+                    final messageProvider = Provider.of<MessageProvider>(context, listen: false);
+                    try {
+                      await propertyProvider.assignTenantToRoom(
+                        propertyId: updatedProperty.id,
+                        floorNumber: floor1.floorNumber,
+                        roomNumber: roomA.roomNumber.toString(),
+                        tenantId: unassignedTenant.id,
+                        messageProvider: messageProvider,
+                        roomId: roomA.id,
+                      );
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Tenant assigned to Room A, Floor 1!')),
+                      );
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Assignment failed: $e')),
+                      );
+                    }
+                  },
+                  child: const Text('Assign first available tenant to Room A, Floor 1'),
+                ),
+              ),
             Text('Address: ${updatedProperty.address}'),
             Text('Rent: KES ${updatedProperty.rentAmount.toStringAsFixed(1)}'),
             Text('Total Rooms: ${updatedProperty.totalRooms}'),

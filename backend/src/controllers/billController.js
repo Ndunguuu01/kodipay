@@ -6,7 +6,7 @@ const Property = require('../models/Property');
 // @access  Private
 const createBill = async (req, res) => {
   try {
-    const { property: propertyId, unit: unitId } = req.body;
+    const { property: propertyId, unit: unitId, tenant: tenantId, amount, dueDate, type, description } = req.body;
 
     // Verify property exists and user has access
     const property = await Property.findById(propertyId);
@@ -15,20 +15,37 @@ const createBill = async (req, res) => {
     }
 
     if (
-      property.owner.toString() !== req.user._id.toString() &&
-      property.manager?.toString() !== req.user._id.toString()
+      (property.landlordId && property.landlordId.toString() !== req.user._id.toString())
     ) {
       return res.status(401).json({ message: 'Not authorized' });
     }
 
-    // Verify unit exists
-    const unit = property.units.id(unitId);
-    if (!unit) {
-      return res.status(404).json({ message: 'Unit not found' });
+    // Verify unit exists by searching through floors and rooms
+    let unitFound = false;
+    let roomDetails = null;
+    
+    for (const floor of property.floors) {
+      const room = floor.rooms.find(r => r._id.toString() === unitId);
+      if (room) {
+        unitFound = true;
+        roomDetails = room;
+        break;
+      }
+    }
+    
+    if (!unitFound) {
+      return res.status(404).json({ message: 'Room/Unit not found' });
     }
 
+    // Create the bill with correct structure
     const bill = await Bill.create({
-      ...req.body,
+      property: propertyId,
+      unit: unitId,
+      tenant: tenantId,
+      amount: amount,
+      dueDate: new Date(dueDate),
+      type: type,
+      description: description,
       createdBy: req.user._id,
     });
 
@@ -79,8 +96,7 @@ const getBill = async (req, res) => {
     // Check if user has access
     const property = await Property.findById(bill.property);
     if (
-      property.owner.toString() !== req.user._id.toString() &&
-      property.manager?.toString() !== req.user._id.toString() &&
+      (property.landlordId && property.landlordId.toString() !== req.user._id.toString()) &&
       bill.tenant.toString() !== req.user._id.toString()
     ) {
       return res.status(401).json({ message: 'Not authorized' });
@@ -107,8 +123,7 @@ const updateBill = async (req, res) => {
     // Check if user has access
     const property = await Property.findById(bill.property);
     if (
-      property.owner.toString() !== req.user._id.toString() &&
-      property.manager?.toString() !== req.user._id.toString()
+      property.landlordId && property.landlordId.toString() !== req.user._id.toString()
     ) {
       return res.status(401).json({ message: 'Not authorized' });
     }
@@ -140,8 +155,7 @@ const deleteBill = async (req, res) => {
     // Check if user has access
     const property = await Property.findById(bill.property);
     if (
-      property.owner.toString() !== req.user._id.toString() &&
-      property.manager?.toString() !== req.user._id.toString()
+      property.landlordId && property.landlordId.toString() !== req.user._id.toString()
     ) {
       return res.status(401).json({ message: 'Not authorized' });
     }
@@ -169,8 +183,7 @@ const addPayment = async (req, res) => {
     // Check if user has access
     const property = await Property.findById(bill.property);
     if (
-      property.owner.toString() !== req.user._id.toString() &&
-      property.manager?.toString() !== req.user._id.toString() &&
+      (property.landlordId && property.landlordId.toString() !== req.user._id.toString()) &&
       bill.tenant.toString() !== req.user._id.toString()
     ) {
       return res.status(401).json({ message: 'Not authorized' });
