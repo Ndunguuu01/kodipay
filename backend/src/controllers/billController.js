@@ -15,7 +15,7 @@ const createBill = async (req, res) => {
     }
 
     if (
-      (property.landlordId && property.landlordId.toString() !== req.user._id.toString())
+      property.landlordId && property.landlordId.toString && property.landlordId.toString() !== req.user._id.toString()
     ) {
       return res.status(401).json({ message: 'Not authorized' });
     }
@@ -96,7 +96,7 @@ const getBill = async (req, res) => {
     // Check if user has access
     const property = await Property.findById(bill.property);
     if (
-      (property.landlordId && property.landlordId.toString() !== req.user._id.toString()) &&
+      (property.landlordId && property.landlordId.toString && property.landlordId.toString() !== req.user._id.toString()) &&
       bill.tenant.toString() !== req.user._id.toString()
     ) {
       return res.status(401).json({ message: 'Not authorized' });
@@ -123,7 +123,7 @@ const updateBill = async (req, res) => {
     // Check if user has access
     const property = await Property.findById(bill.property);
     if (
-      property.landlordId && property.landlordId.toString() !== req.user._id.toString()
+      property.landlordId && property.landlordId.toString && property.landlordId.toString() !== req.user._id.toString()
     ) {
       return res.status(401).json({ message: 'Not authorized' });
     }
@@ -155,7 +155,7 @@ const deleteBill = async (req, res) => {
     // Check if user has access
     const property = await Property.findById(bill.property);
     if (
-      property.landlordId && property.landlordId.toString() !== req.user._id.toString()
+      property.landlordId && property.landlordId.toString && property.landlordId.toString() !== req.user._id.toString()
     ) {
       return res.status(401).json({ message: 'Not authorized' });
     }
@@ -183,7 +183,7 @@ const addPayment = async (req, res) => {
     // Check if user has access
     const property = await Property.findById(bill.property);
     if (
-      (property.landlordId && property.landlordId.toString() !== req.user._id.toString()) &&
+      (property.landlordId && property.landlordId.toString && property.landlordId.toString() !== req.user._id.toString()) &&
       bill.tenant.toString() !== req.user._id.toString()
     ) {
       return res.status(401).json({ message: 'Not authorized' });
@@ -243,4 +243,4 @@ module.exports = {
   deleteBill,
   addPayment,
   getBillStats,
-}; 
+};

@@ -51,7 +51,7 @@ const updateProperty = async (req, res) => {
     }
 
     // Check if user is landlord
-    if (property.landlordId.toString() !== req.user._id.toString()) {
+    if (property.landlordId && property.landlordId.toString && property.landlordId.toString() !== req.user._id.toString()) {
       return res.status(401).json({ message: 'Not authorized' });
     }
 
@@ -80,7 +80,7 @@ const deleteProperty = async (req, res) => {
     }
 
     // Check if user is landlord
-    if (property.landlordId.toString() !== req.user._id.toString()) {
+    if (property.landlordId && property.landlordId.toString && property.landlordId.toString() !== req.user._id.toString()) {
       return res.status(401).json({ message: 'Not authorized' });
     }
 
@@ -103,7 +103,7 @@ const addUnit = async (req, res) => {
 
     // Check if user is owner or manager
     if (
-      property.landlordId.toString() !== req.user._id.toString()
+      property.landlordId && property.landlordId.toString && property.landlordId.toString() !== req.user._id.toString()
     ) {
       return res.status(401).json({ message: 'Not authorized' });
     }
@@ -127,7 +127,7 @@ const updateUnit = async (req, res) => {
     }
 
     // Check if user is landlord
-    if (property.landlordId.toString() !== req.user._id.toString()) {
+    if (property.landlordId && property.landlordId.toString && property.landlordId.toString() !== req.user._id.toString()) {
       return res.status(401).json({ message: 'Not authorized' });
     }
 
@@ -156,7 +156,7 @@ const deleteUnit = async (req, res) => {
     }
 
     // Check if user is landlord
-    if (property.landlordId.toString() !== req.user._id.toString()) {
+    if (property.landlordId && property.landlordId.toString && property.landlordId.toString() !== req.user._id.toString()) {
       return res.status(401).json({ message: 'Not authorized' });
     }
 
@@ -221,7 +221,7 @@ const assignTenantToRoom = async (req, res) => {
     }
 
     // Check if user is landlord
-    if (property.landlordId.toString() !== req.user._id.toString()) {
+    if (property.landlordId && property.landlordId.toString && property.landlordId.toString() !== req.user._id.toString()) {
       return res.status(401).json({ message: 'Not authorized' });
     }
 
